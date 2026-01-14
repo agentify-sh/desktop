@@ -1,0 +1,28 @@
+{
+  "vendors": [
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "url": "https://chatgpt.com/",
+      "status": "supported"
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "url": "https://claude.ai/",
+      "status": "planned"
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "url": "https://grok.com/",
+      "status": "planned"
+    },
+    {
+      "id": "aistudio",
+      "name": "Google AI Studio",
+      "url": "https://aistudio.google.com/",
+      "status": "planned"
+    }
+  ]
+}

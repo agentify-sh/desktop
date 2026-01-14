@@ -89,15 +89,16 @@ test('mcp-lib: ensureDesktopRunning spawns if serverId mismatches and then recov
   const fetchImpl = makeFetch({ getServerId: () => fetchServerId, acceptToken: token });
 
   let spawned = 0;
-  const spawnImpl = () => {
+  const spawnImpl = (_cmd, _args, opts) => {
     spawned += 1;
+    assert.equal(opts?.env?.AGENTIFY_DESKTOP_SHOW_TABS, 'true');
     // Simulate that the spawned app writes a new state with matching serverId.
     fetchServerId = 'sid-new';
     void writeState({ ok: true, port: 12345, serverId: 'sid-new' }, dir);
     return { unref() {} };
   };
 
-  const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000 });
+  const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000, showTabs: true });
   assert.ok(spawned >= 1);
   assert.equal(conn.serverId, 'sid-new');
 });

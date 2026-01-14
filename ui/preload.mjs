@@ -1,0 +1,14 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('agentifyDesktop', {
+  getState: () => ipcRenderer.invoke('agentify:getState'),
+  createTab: (args) => ipcRenderer.invoke('agentify:createTab', args || {}),
+  showTab: (args) => ipcRenderer.invoke('agentify:showTab', args || {}),
+  hideTab: (args) => ipcRenderer.invoke('agentify:hideTab', args || {}),
+  closeTab: (args) => ipcRenderer.invoke('agentify:closeTab', args || {}),
+  openStateDir: () => ipcRenderer.invoke('agentify:openStateDir'),
+  onTabsChanged: (cb) => {
+    if (typeof cb !== 'function') return;
+    ipcRenderer.on('agentify:tabsChanged', () => cb());
+  }
+});

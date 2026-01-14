@@ -60,12 +60,17 @@ function getTabIdFromUrl(url) {
   return tabId || null;
 }
 
+function envShowTabsDefault() {
+  const v = String(process.env.AGENTIFY_DESKTOP_SHOW_TABS || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 async function resolveTab({ tabs, defaultTabId, body, url }) {
   const tabId = (body?.tabId ? String(body.tabId).trim() : '') || getTabIdFromUrl(url) || null;
   const key = (body?.key ? String(body.key).trim() : '') || null;
   const name = (body?.name ? String(body.name).trim() : '') || null;
   if (tabId) return tabId;
-  if (key) return await tabs.ensureTab({ key, name });
+  if (key) return await tabs.ensureTab({ key, name, show: envShowTabsDefault() });
   return defaultTabId;
 }
 
@@ -119,7 +124,9 @@ export function startHttpApi({
         const body = await parseBody(req);
         const key = (body.key ? String(body.key).trim() : '') || null;
         const name = (body.name ? String(body.name).trim() : '') || null;
-        const tabId = key ? await tabs.ensureTab({ key, name }) : await tabs.createTab({ name, show: false });
+        const show = typeof body.show === 'boolean' ? body.show : envShowTabsDefault();
+        const tabId = key ? await tabs.ensureTab({ key, name, show }) : await tabs.createTab({ name, show });
+        if (show) await onShow?.({ tabId }).catch(() => {});
         return sendJson(res, 200, { ok: true, tabId });
       }
       if (url.pathname === '/tabs/close' && req.method === 'POST') {
