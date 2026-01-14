@@ -8,8 +8,19 @@ import { ensureDesktopRunning, requestJson } from './mcp-lib.mjs';
 
 const server = new McpServer({ name: 'agentify-desktop', version: '0.1.0' });
 const stateDir = defaultStateDir();
+const showTabs = process.argv.includes('--show-tabs');
 
-server.registerTool(
+function registerAliasedTool(primaryName, aliasName, def, handler) {
+  server.registerTool(primaryName, def, handler);
+  if (aliasName && aliasName !== primaryName) server.registerTool(aliasName, def, handler);
+}
+
+async function getConn() {
+  return await ensureDesktopRunning({ stateDir, showTabs });
+}
+
+registerAliasedTool(
+  'agentify_query',
   'browser_query',
   {
     description:
@@ -25,7 +36,7 @@ server.registerTool(
   },
   async ({ model, tabId, key, prompt, attachments, timeoutMs }) => {
     void model;
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({
       ...conn,
       method: 'POST',
@@ -44,7 +55,8 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_read_page',
   'browser_read_page',
   {
     description: 'Read text content from the active tab in the local Agentify Desktop window.',
@@ -55,7 +67,7 @@ server.registerTool(
     }
   },
   async ({ tabId, key, maxChars }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({
       ...conn,
       method: 'POST',
@@ -66,7 +78,8 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_navigate',
   'browser_navigate',
   {
     description: 'Navigate the Agentify Desktop browser window to a URL (local UI automation).',
@@ -77,13 +90,14 @@ server.registerTool(
     }
   },
   async ({ tabId, key, url }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'POST', path: '/navigate', body: { tabId, key, url } });
     return { content: [{ type: 'text', text: data.url || 'ok' }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_ensure_ready',
   'browser_ensure_ready',
   {
     description:
@@ -95,50 +109,54 @@ server.registerTool(
     }
   },
   async ({ tabId, key, timeoutMs }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'POST', path: '/ensure-ready', body: { tabId, key, timeoutMs: timeoutMs || 10 * 60_000 } });
     return { content: [{ type: 'text', text: JSON.stringify(data.state || {}, null, 2) }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_show',
   'browser_show',
   {
     description: 'Bring the Agentify Desktop window to the front.',
     inputSchema: { tabId: z.string().optional(), key: z.string().optional() }
   },
   async ({ tabId, key }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/show', body: { tabId, key } });
     return { content: [{ type: 'text', text: 'ok' }] };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_hide',
   'browser_hide',
   { description: 'Minimize the Agentify Desktop window.', inputSchema: { tabId: z.string().optional(), key: z.string().optional() } },
   async ({ tabId, key }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/hide', body: { tabId, key } });
     return { content: [{ type: 'text', text: 'ok' }] };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_status',
   'browser_status',
   {
     description: 'Get current URL and blocked/ready status for the Agentify Desktop window.',
     inputSchema: { tabId: z.string().optional().describe('Tab/session id to query.') }
   },
   async ({ tabId }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const path = tabId ? `/status?tabId=${encodeURIComponent(tabId)}` : '/status';
     const data = await requestJson({ ...conn, method: 'GET', path });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_image_gen',
   'browser_image_gen',
   {
     description:
@@ -152,7 +170,7 @@ server.registerTool(
     }
   },
   async ({ tabId, key, prompt, timeoutMs, maxImages }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const q = await requestJson({
       ...conn,
       method: 'POST',
@@ -168,7 +186,8 @@ server.registerTool(
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_download_images',
   'browser_download_images',
   {
     description:
@@ -180,73 +199,78 @@ server.registerTool(
     }
   },
   async ({ tabId, key, maxImages }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const d = await requestJson({ ...conn, method: 'POST', path: '/download-images', body: { tabId, key, maxImages: maxImages || 6 } });
     const structuredContent = { files: d.files || [] };
     return { content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }], structuredContent };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_tabs',
   'browser_tabs',
   {
     description: 'List current tabs/sessions (for parallel jobs).',
     inputSchema: {}
   },
   async () => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'GET', path: '/tabs' });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_tab_create',
   'browser_tab_create',
   {
     description: 'Create (or ensure) a tab/session for a given key.',
-    inputSchema: { key: z.string().optional(), name: z.string().optional() }
+    inputSchema: { key: z.string().optional(), name: z.string().optional(), show: z.boolean().optional().describe('Show the tab window immediately.') }
   },
-  async ({ key, name }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
-    const data = await requestJson({ ...conn, method: 'POST', path: '/tabs/create', body: { key, name } });
+  async ({ key, name, show }) => {
+    const conn = await getConn();
+    const data = await requestJson({ ...conn, method: 'POST', path: '/tabs/create', body: { key, name, show: typeof show === 'boolean' ? show : undefined } });
     return { content: [{ type: 'text', text: data.tabId || '' }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_tab_close',
   'browser_tab_close',
   {
     description: 'Close a tab/session by tabId.',
     inputSchema: { tabId: z.string().describe('Tab id to close.') }
   },
   async ({ tabId }) => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'POST', path: '/tabs/close', body: { tabId } });
     return { content: [{ type: 'text', text: 'ok' }], structuredContent: data };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_shutdown',
   'browser_shutdown',
   {
     description: 'Gracefully shut down the Agentify Desktop app.',
     inputSchema: {}
   },
   async () => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/shutdown', body: { scope: 'app' } });
     return { content: [{ type: 'text', text: 'ok' }] };
   }
 );
 
-server.registerTool(
+registerAliasedTool(
+  'agentify_rotate_token',
   'browser_rotate_token',
   {
     description: 'Rotate the local HTTP API bearer token (requires reconnect on subsequent calls).',
     inputSchema: {}
   },
   async () => {
-    const conn = await ensureDesktopRunning({ stateDir });
+    const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/rotate-token' });
     return { content: [{ type: 'text', text: 'ok' }] };
   }

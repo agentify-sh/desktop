@@ -112,11 +112,11 @@ export class TabManager {
     });
   }
 
-  async ensureTab({ key, name, url, vendorId, vendorName } = {}) {
+  async ensureTab({ key, name, url, vendorId, vendorName, show } = {}) {
     if (!key) throw new Error('missing_key');
     const existing = this.keyToId.get(key);
     if (existing) return existing;
-    return await this.createTab({ key, name, show: false, url, vendorId, vendorName });
+    return await this.createTab({ key, name, show: !!show, url, vendorId, vendorName });
   }
 
   listTabs() {
