@@ -23,6 +23,15 @@ Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solv
 Requirements:
 - Node.js 20+ (22 recommended)
 
+## Quickstart (macOS/Linux)
+From anywhere:
+```bash
+git clone git@github.com:agentify-sh/desktop.git
+cd desktop
+git switch feature/public-release-v1
+./scripts/quickstart.sh
+```
+
 Install dependencies:
 ```bash
 npm i
