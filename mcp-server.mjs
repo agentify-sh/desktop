@@ -169,6 +169,25 @@ server.registerTool(
 );
 
 server.registerTool(
+  'browser_download_images',
+  {
+    description:
+      'Download images from the latest assistant message (best-effort). Useful if you generated images manually in the UI or via browser_query.',
+    inputSchema: {
+      tabId: z.string().optional().describe('Tab/session id to use.'),
+      key: z.string().optional().describe('Stable tab key; creates a tab if missing.'),
+      maxImages: z.number().optional().describe('Maximum images to download.')
+    }
+  },
+  async ({ tabId, key, maxImages }) => {
+    const conn = await ensureDesktopRunning({ stateDir });
+    const d = await requestJson({ ...conn, method: 'POST', path: '/download-images', body: { tabId, key, maxImages: maxImages || 6 } });
+    const structuredContent = { files: d.files || [] };
+    return { content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }], structuredContent };
+  }
+);
+
+server.registerTool(
   'browser_tabs',
   {
     description: 'List current tabs/sessions (for parallel jobs).',

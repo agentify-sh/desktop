@@ -81,6 +81,9 @@ async function main() {
   try {
     app.userAgentFallback = buildChromeUserAgent();
   } catch {}
+  try {
+    process.title = 'Agentify Desktop';
+  } catch {}
 
   app.setName('Agentify Desktop');
   app.setPath('userData', path.join(stateDir, 'electron-user-data'));

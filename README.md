@@ -58,6 +58,11 @@ Then use tools like `browser_query` and pass a stable `key` (e.g. your repo name
 
 If you already had Codex open, restart it (or start a new session) so it reloads MCP server config. You can confirm registration via `codex mcp list`.
 
+## How to use (practical)
+- **Use ChatGPT normally (manual):** open the ChatGPT tab, write a plan/spec in the UI, then in Codex call `browser_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT from Codex:** call `browser_ensure_ready`, then `browser_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Generate images:** either ask for images via `browser_query` (then call `browser_download_images`), or generate them manually in the UI and then call `browser_download_images`.
+
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
 - **Completion detection:** waiting for “stop generating” to disappear + text stability works well, but can mis-detect on very long outputs or intermittent streaming pauses.
