@@ -61,7 +61,12 @@ If you already had Codex open, restart it (or start a new session) so it reloads
 ## How to use (practical)
 - **Use ChatGPT normally (manual):** open the ChatGPT tab, write a plan/spec in the UI, then in Codex call `browser_read_page` to pull the transcript into your workflow.
 - **Drive ChatGPT from Codex:** call `browser_ensure_ready`, then `browser_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
-- **Generate images:** either ask for images via `browser_query` (then call `browser_download_images`), or generate them manually in the UI and then call `browser_download_images`.
+- **Generate images:** ask for images via `agentify_query` / `browser_query` (then call `agentify_download_images` / `browser_download_images`), or generate them manually in the UI and then call download.
+
+## Tool names and visibility
+- Preferred tool names are `agentify_*` (for example: `agentify_query`, `agentify_ensure_ready`, `agentify_tabs`). Legacy `browser_*` names remain as aliases.
+- For debugging, you can make newly created per-session tab windows visible by default by registering the MCP server with:
+  - `codex mcp add agentify-desktop -- node mcp-server.mjs --show-tabs`
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
