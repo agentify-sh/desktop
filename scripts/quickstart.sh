@@ -8,16 +8,19 @@ die() { printf "\nERROR: %s\n" "$*" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: ./scripts/quickstart.sh [--foreground]
+Usage: ./scripts/quickstart.sh [--foreground] [--show-tabs]
 
 --foreground  Run Agentify Desktop in the foreground (shows logs, Ctrl+C to stop).
+--show-tabs   Make newly-created tab windows visible by default (debug-friendly).
 EOF
 }
 
 FOREGROUND=0
+SHOW_TABS=0
 for arg in "$@"; do
   case "$arg" in
     --foreground) FOREGROUND=1 ;;
+    --show-tabs) SHOW_TABS=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown arg: ${arg}" ;;
   esac
@@ -42,8 +45,18 @@ say "1) Installing dependencies (npm ci)..."
 
 say "2) Registering MCP server with Codex (absolute path)..."
 if command -v codex >/dev/null 2>&1; then
+  MCP_CMD=(node "${REPO_ROOT}/mcp-server.mjs")
+  if [[ "${SHOW_TABS}" -eq 1 ]]; then
+    MCP_CMD+=(--show-tabs)
+  fi
+
+  # Ensure the server config matches the requested flags.
   set +e
-  codex mcp add agentify-desktop -- node "${REPO_ROOT}/mcp-server.mjs"
+  codex mcp remove agentify-desktop >/dev/null 2>&1
+  set -e
+
+  set +e
+  codex mcp add agentify-desktop -- "${MCP_CMD[@]}"
   CODEX_ADD_RC=$?
   set -e
   if [[ "${CODEX_ADD_RC}" -ne 0 ]]; then
@@ -55,7 +68,11 @@ if command -v codex >/dev/null 2>&1; then
 else
   say "Codex CLI not found on PATH; skipping MCP registration."
   say "When Codex is installed, run:"
-  say "  codex mcp add agentify-desktop -- node \"${REPO_ROOT}/mcp-server.mjs\""
+  if [[ "${SHOW_TABS}" -eq 1 ]]; then
+    say "  codex mcp add agentify-desktop -- node \"${REPO_ROOT}/mcp-server.mjs\" --show-tabs"
+  else
+    say "  codex mcp add agentify-desktop -- node \"${REPO_ROOT}/mcp-server.mjs\""
+  fi
 fi
 
 say "3) Starting Agentify Desktop (Electron)..."
@@ -102,6 +119,11 @@ say "Next:"
 say "- The Agentify Control Center will open. Click 'Show default' to open the ChatGPT tab and sign in."
 say "- MCP note: Codex starts the MCP server automatically on first tool call (you do NOT need to run a separate 'npm run mcp')."
 say "- If you already have Codex open, restart it (or start a new session) to pick up the new MCP server."
+if [[ "${SHOW_TABS}" -eq 1 ]]; then
+  say "- Tabs visibility: --show-tabs is enabled, so new tabs will be shown by default."
+else
+  say "- Tabs visibility: default is hidden tabs; use the Control Center or agentify_show/browser_show to bring a tab forward."
+fi
 say "- In Codex, use the tools:"
 say "  - browser_ensure_ready   (waits for #prompt-textarea / prompt box)"
 say "  - browser_query          (send a prompt; use 'key' for parallel jobs)"
