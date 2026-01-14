@@ -43,7 +43,11 @@ Start the desktop app:
 npm run start
 ```
 
-Sign in to ChatGPT in the window.
+The **Agentify Control Center** opens. Use it to:
+- Show/hide tabs (each tab is a separate window)
+- Create tabs for different vendors (ChatGPT supported; others planned)
+
+Sign in to ChatGPT in the tab window.
 
 ## Connect from Codex (MCP)
 Add the MCP server:
