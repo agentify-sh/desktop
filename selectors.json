@@ -1,0 +1,8 @@
+{
+  "promptTextarea": "#prompt-textarea",
+  "sendButton": "button[data-testid=\"send-button\"], button[aria-label=\"Send prompt\"], button[aria-label=\"Send\"]",
+  "stopButton": "button[data-testid=\"stop-button\"], button[aria-label=\"Stop generating\"], button[aria-label=\"Stop\"]",
+  "assistantMessage": "[data-message-author-role=\"assistant\"]",
+  "composerRoot": "form, main"
+}
+
