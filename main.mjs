@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { app, Notification, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, Notification, BrowserWindow, ipcMain, shell, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
@@ -203,6 +203,46 @@ async function main() {
   if (pendingSecondInstanceFocus) focusDefaultTab();
 
   await showControlCenter().catch(() => {});
+
+  const buildMenu = () => {
+    const template = [
+      {
+        label: 'Agentify Desktop',
+        submenu: [
+          { label: 'Control Center', accelerator: 'CmdOrCtrl+Shift+A', click: () => showControlCenter().catch(() => {}) },
+          { label: 'Show Default Tab', accelerator: 'CmdOrCtrl+Shift+D', click: () => focusDefaultTab?.() },
+          { type: 'separator' },
+          { label: 'Quit', role: 'quit' }
+        ]
+      },
+      {
+        label: 'Tabs',
+        submenu: [
+          {
+            label: 'New ChatGPT Tab',
+            click: async () => {
+              try {
+                await tabs.createTab({ url: defaultVendor.url, vendorId: defaultVendor.id, vendorName: defaultVendor.name, show: true });
+              } catch {}
+            }
+          }
+        ]
+      }
+    ];
+    try {
+      Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    } catch {}
+  };
+  buildMenu();
+  try {
+    if (process.platform === 'darwin' && app.dock) {
+      const dockMenu = Menu.buildFromTemplate([
+        { label: 'Control Center', click: () => showControlCenter().catch(() => {}) },
+        { label: 'Show Default Tab', click: () => focusDefaultTab?.() }
+      ]);
+      app.dock.setMenu(dockMenu);
+    }
+  } catch {}
 
   ipcMain.handle('agentify:getState', async () => {
     return { ok: true, vendors, tabs: tabs.listTabs(), defaultTabId, stateDir };
