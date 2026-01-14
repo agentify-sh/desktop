@@ -23,6 +23,19 @@ Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solv
 Requirements:
 - Node.js 20+ (22 recommended)
 
+## Quickstart (macOS/Linux)
+From anywhere:
+```bash
+git clone git@github.com:agentify-sh/desktop.git
+cd desktop
+./scripts/quickstart.sh
+```
+
+To make newly-created tab windows visible by default (debug-friendly):
+```bash
+./scripts/quickstart.sh --show-tabs
+```
+
 Install dependencies:
 ```bash
 npm i
@@ -34,7 +47,11 @@ Start the desktop app:
 npm run start
 ```
 
-Sign in to ChatGPT in the window.
+The **Agentify Control Center** opens. Use it to:
+- Show/hide tabs (each tab is a separate window)
+- Create tabs for different vendors (ChatGPT supported; others planned)
+
+Sign in to ChatGPT in the tab window.
 
 ## Connect from Codex (MCP)
 Add the MCP server:
@@ -43,6 +60,20 @@ codex mcp add agentify-desktop -- node mcp-server.mjs
 ```
 
 Then use tools like `browser_query` and pass a stable `key` (e.g. your repo name) to run parallel jobs without mixing contexts.
+
+If you already had Codex open, restart it (or start a new session) so it reloads MCP server config. You can confirm registration via `codex mcp list`.
+
+## How to use (practical)
+- **Use ChatGPT normally (manual):** open the ChatGPT tab, write a plan/spec in the UI, then in Codex call `browser_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT from Codex:** call `browser_ensure_ready`, then `browser_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Generate images:** ask for images via `agentify_query` / `browser_query` (then call `agentify_download_images` / `browser_download_images`), or generate them manually in the UI and then call download.
+
+## Tool names and visibility
+- Preferred tool names are `agentify_*` (for example: `agentify_query`, `agentify_ensure_ready`, `agentify_tabs`). Legacy `browser_*` names remain as aliases.
+- For debugging, you can make newly-created tab windows visible by default by running:
+  - `./scripts/quickstart.sh --show-tabs`
+- If you register manually, pass the flag through to the MCP command:
+  - `codex mcp add agentify-desktop -- node mcp-server.mjs --show-tabs`
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.

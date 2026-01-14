@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Agentify Desktop</title>
+    <link rel="stylesheet" href="./control-center.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="brand">
+          <div class="logo">A</div>
+          <div class="titles">
+            <div class="name">Agentify Desktop</div>
+            <div class="sub">Local browser control • MCP</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btnOpenState" class="btn secondary" title="Open state folder">State</button>
+          <button id="btnRefresh" class="btn secondary" title="Refresh">Refresh</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="card">
+          <div class="cardTitle">Create tab</div>
+          <div class="grid">
+            <label class="field">
+              <div class="label">Vendor</div>
+              <select id="vendorSelect"></select>
+            </label>
+            <label class="field">
+              <div class="label">Key (optional)</div>
+              <input id="tabKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Name (optional)</div>
+              <input id="tabName" type="text" placeholder="e.g. billing-bot" autocomplete="off" />
+            </label>
+          </div>
+          <div class="row">
+            <label class="checkbox">
+              <input id="tabShow" type="checkbox" />
+              <span>Show window</span>
+            </label>
+            <button id="btnCreate" class="btn primary">Create</button>
+          </div>
+          <div id="createHint" class="hint"></div>
+        </section>
+
+        <section class="card">
+          <div class="cardTitle">Tabs</div>
+          <div id="tabsEmpty" class="empty">No tabs.</div>
+          <div id="tabsList" class="tabs"></div>
+        </section>
+
+        <section class="card">
+          <div class="cardTitle">Help</div>
+          <div class="hint">
+            If a CAPTCHA/login challenge appears, Agentify will bring the relevant window forward and pause automation until you finish.
+          </div>
+          <div class="hint">
+            Use stable <span class="mono">key</span> values (e.g. project names) to keep parallel jobs isolated.
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div id="statusLine" class="status">Loading…</div>
+        <button id="btnShowDefault" class="btn secondary">Show default</button>
+      </footer>
+    </div>
+
+    <script src="./control-center.js"></script>
+  </body>
+</html>
+
