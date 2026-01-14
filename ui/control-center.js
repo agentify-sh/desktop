@@ -15,8 +15,22 @@ function fmtTime(ms) {
   }
 }
 
+function num(id, fallback) {
+  const v = Number(el(id).value);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function setNum(id, value) {
+  el(id).value = String(Number(value));
+}
+
+function setChecked(id, value) {
+  el(id).checked = !!value;
+}
+
 async function refresh() {
   const state = await window.agentifyDesktop.getState();
+  const settings = await window.agentifyDesktop.getSettings();
 
   const vendorSelect = el('vendorSelect');
   vendorSelect.innerHTML = '';
@@ -90,6 +104,16 @@ async function refresh() {
   }
 
   el('statusLine').textContent = `Tabs: ${tabs.length} • State: ${state.stateDir || ''}`;
+
+  // Settings UI.
+  setNum('setMaxInflight', settings.maxInflightQueries);
+  setNum('setQpm', settings.maxQueriesPerMinute);
+  setNum('setTabGap', settings.minTabGapMs);
+  setNum('setGlobalGap', settings.minGlobalGapMs);
+  setChecked('setShowTabsDefault', settings.showTabsByDefault);
+  setChecked('setAcknowledge', false);
+  el('btnSaveSettings').disabled = true;
+  el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
 }
 
 async function main() {
@@ -114,6 +138,41 @@ async function main() {
       await refresh();
     } catch (e) {
       el('createHint').textContent = `Create failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  const updateSaveEnabled = () => {
+    el('btnSaveSettings').disabled = !el('setAcknowledge').checked;
+  };
+  el('setAcknowledge').onchange = updateSaveEnabled;
+
+  el('btnResetSettings').onclick = async () => {
+    el('settingsHint').textContent = '';
+    try {
+      await window.agentifyDesktop.setSettings({ reset: true });
+      el('settingsHint').textContent = 'Reset to defaults.';
+      await refresh();
+    } catch (e) {
+      el('settingsHint').textContent = `Reset failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnSaveSettings').onclick = async () => {
+    el('settingsHint').textContent = '';
+    try {
+      const payload = {
+        maxInflightQueries: num('setMaxInflight', 2),
+        maxQueriesPerMinute: num('setQpm', 12),
+        minTabGapMs: num('setTabGap', 1200),
+        minGlobalGapMs: num('setGlobalGap', 200),
+        showTabsByDefault: !!el('setShowTabsDefault').checked,
+        acknowledge: !!el('setAcknowledge').checked
+      };
+      const out = await window.agentifyDesktop.setSettings(payload);
+      el('settingsHint').textContent = `Saved. Acknowledged: ${out.acknowledgedAt || 'no'}`;
+      await refresh();
+    } catch (e) {
+      el('settingsHint').textContent = `Save failed: ${e?.message || String(e)}`;
     }
   };
 
