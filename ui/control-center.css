@@ -79,6 +79,8 @@ input::placeholder { color: rgba(233,236,242,0.45); }
   gap: 10px;
 }
 
+.btnRow { display: flex; gap: 8px; }
+
 .checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(233,236,242,0.85); }
 .checkbox input { width: 16px; height: 16px; }
 
@@ -129,4 +131,3 @@ input::placeholder { color: rgba(233,236,242,0.45); }
   background: rgba(0,0,0,0.15);
 }
 .status { font-size: 12px; color: rgba(233,236,242,0.65); }
-

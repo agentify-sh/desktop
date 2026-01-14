@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { ChatGPTController } from './chatgpt-controller.mjs';
 import { startHttpApi } from './http-api.mjs';
 import { TabManager } from './tab-manager.mjs';
-import { defaultStateDir, ensureToken, writeState } from './state.mjs';
+import { defaultStateDir, ensureToken, readSettings, writeSettings, defaultSettings, writeState } from './state.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,6 +105,7 @@ async function main() {
   const token = await ensureToken(stateDir);
   const selectors = await loadSelectors(stateDir);
   const vendors = await loadVendors();
+  let settings = await readSettings(stateDir);
   const serverId = crypto.randomUUID();
 
   const notify = (body) => {
@@ -251,6 +252,29 @@ async function main() {
     return { ok: true, vendors, tabs: tabs.listTabs(), defaultTabId, stateDir };
   });
 
+  ipcMain.handle('agentify:getSettings', async () => {
+    settings = await readSettings(stateDir);
+    return settings;
+  });
+
+  ipcMain.handle('agentify:setSettings', async (_evt, args) => {
+    if (args?.reset) {
+      settings = await writeSettings(defaultSettings(), stateDir);
+      return settings;
+    }
+    const next = {
+      ...settings,
+      maxInflightQueries: args?.maxInflightQueries,
+      maxQueriesPerMinute: args?.maxQueriesPerMinute,
+      minTabGapMs: args?.minTabGapMs,
+      minGlobalGapMs: args?.minGlobalGapMs,
+      showTabsByDefault: args?.showTabsByDefault
+    };
+    if (args?.acknowledge) next.acknowledgedAt = new Date().toISOString();
+    settings = await writeSettings(next, stateDir);
+    return settings;
+  });
+
   ipcMain.handle('agentify:createTab', async (_evt, args) => {
     const vendorId = String(args?.vendorId || '').trim() || 'chatgpt';
     const vendor = vendors.find((v) => v.id === vendorId) || vendors.find((v) => v.id === 'chatgpt') || vendors[0];
@@ -315,6 +339,7 @@ async function main() {
         defaultTabId,
         serverId,
         stateDir,
+        getSettings: async () => settings,
         onShow: async ({ tabId }) => {
           const win = tabs.getWindowById(tabId || defaultTabId);
           if (win.isMinimized()) win.restore();

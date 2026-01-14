@@ -50,6 +50,7 @@ npm run start
 The **Agentify Control Center** opens. Use it to:
 - Show/hide tabs (each tab is a separate window)
 - Create tabs for different vendors (ChatGPT supported; others planned)
+- Tune automation safety limits (governor)
 
 Sign in to ChatGPT in the tab window.
 
@@ -74,6 +75,14 @@ If you already had Codex open, restart it (or start a new session) so it reloads
   - `./scripts/quickstart.sh --show-tabs`
 - If you register manually, pass the flag through to the MCP command:
   - `codex mcp add agentify-desktop -- node mcp-server.mjs --show-tabs`
+
+## Governor (anti-spam)
+Agentify Desktop includes a built-in “governor” to reduce accidental high-rate automation:
+- Limits concurrent in-flight queries.
+- Limits queries per minute (token bucket).
+- Enforces minimum gaps between queries (per tab + globally).
+
+You can adjust these limits in the Control Center **Settings (governor)** section after acknowledging the disclaimer.
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.

@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('agentifyDesktop', {
   getState: () => ipcRenderer.invoke('agentify:getState'),
+  getSettings: () => ipcRenderer.invoke('agentify:getSettings'),
+  setSettings: (args) => ipcRenderer.invoke('agentify:setSettings', args || {}),
   createTab: (args) => ipcRenderer.invoke('agentify:createTab', args || {}),
   showTab: (args) => ipcRenderer.invoke('agentify:showTab', args || {}),
   hideTab: (args) => ipcRenderer.invoke('agentify:hideTab', args || {}),

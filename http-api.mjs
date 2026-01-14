@@ -52,6 +52,7 @@ function mapErrorToHttp(error) {
   if (msg === 'tab_closed') return { code: 409, body: { error: 'tab_closed' } };
   if (msg === 'default_tab_protected') return { code: 409, body: { error: 'default_tab_protected' } };
   if (msg === 'max_tabs_reached') return { code: 409, body: { error: 'max_tabs_reached' } };
+  if (msg === 'rate_limited') return { code: 429, body: { error: 'rate_limited', ...(error?.data || {}) } };
   return null;
 }
 
@@ -65,12 +66,12 @@ function envShowTabsDefault() {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
-async function resolveTab({ tabs, defaultTabId, body, url }) {
+async function resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault = false }) {
   const tabId = (body?.tabId ? String(body.tabId).trim() : '') || getTabIdFromUrl(url) || null;
   const key = (body?.key ? String(body.key).trim() : '') || null;
   const name = (body?.name ? String(body.name).trim() : '') || null;
   if (tabId) return tabId;
-  if (key) return await tabs.ensureTab({ key, name, show: envShowTabsDefault() });
+  if (key) return await tabs.ensureTab({ key, name, show: envShowTabsDefault() || showTabsByDefault });
   return defaultTabId;
 }
 
@@ -85,9 +86,77 @@ export function startHttpApi({
   onShow,
   onHide,
   onShutdown,
-  getStatus
+  getStatus,
+  getSettings
 }) {
   const tokenRef = typeof token === 'string' ? { current: token } : token;
+
+  // Governor state (per-desktop instance).
+  const inflight = { queries: 0 };
+  const lastQueryAt = new Map(); // tabId -> ms
+  let lastAnyQueryAt = 0;
+  const bucket = { tokens: null, lastRefillAt: Date.now(), lastCap: null };
+
+  const getGovernor = async () => {
+    const s = (await getSettings?.().catch(() => null)) || {};
+    const maxInflightQueries = Math.max(1, Number(s.maxInflightQueries || 2) || 2);
+    const maxQueriesPerMinute = Math.max(1, Number(s.maxQueriesPerMinute || 12) || 12);
+    const minTabGapMs = Math.max(0, Number(s.minTabGapMs || 0) || 0);
+    const minGlobalGapMs = Math.max(0, Number(s.minGlobalGapMs || 0) || 0);
+    const showTabsByDefault = !!s.showTabsByDefault;
+    return { maxInflightQueries, maxQueriesPerMinute, minTabGapMs, minGlobalGapMs, showTabsByDefault };
+  };
+
+  const checkAndConsumeQueryBudget = ({ tabId, governor }) => {
+    const now = Date.now();
+    if (inflight.queries >= governor.maxInflightQueries) {
+      const err = new Error('rate_limited');
+      err.data = { reason: 'max_inflight', retryAfterMs: 250 };
+      throw err;
+    }
+
+    const lastTab = lastQueryAt.get(tabId) || 0;
+    const tabWait = governor.minTabGapMs - (now - lastTab);
+    if (tabWait > 0) {
+      const err = new Error('rate_limited');
+      err.data = { reason: 'tab_gap', retryAfterMs: tabWait };
+      throw err;
+    }
+
+    const globalWait = governor.minGlobalGapMs - (now - lastAnyQueryAt);
+    if (globalWait > 0) {
+      const err = new Error('rate_limited');
+      err.data = { reason: 'global_gap', retryAfterMs: globalWait };
+      throw err;
+    }
+
+    // Token bucket (per minute).
+    const cap = governor.maxQueriesPerMinute;
+    const ratePerMs = cap / 60_000;
+    const elapsed = Math.max(0, now - bucket.lastRefillAt);
+    if (bucket.tokens == null) bucket.tokens = cap;
+    if (bucket.lastCap == null) bucket.lastCap = cap;
+    if (cap !== bucket.lastCap) {
+      if (cap > bucket.lastCap) bucket.tokens = Math.min(cap, bucket.tokens + (cap - bucket.lastCap));
+      else bucket.tokens = Math.min(cap, bucket.tokens);
+      bucket.lastCap = cap;
+    }
+    bucket.tokens = Math.min(cap, bucket.tokens + elapsed * ratePerMs);
+    bucket.lastRefillAt = now;
+
+    if (bucket.tokens < 1) {
+      const needed = 1 - bucket.tokens;
+      const retryAfterMs = Math.ceil(needed / ratePerMs);
+      const err = new Error('rate_limited');
+      err.data = { reason: 'qpm', retryAfterMs: Math.max(50, retryAfterMs) };
+      throw err;
+    }
+
+    bucket.tokens -= 1;
+    lastQueryAt.set(tabId, now);
+    lastAnyQueryAt = now;
+  };
+
   const server = http.createServer(async (req, res) => {
     try {
       if (!isLoopback(req.socket?.remoteAddress)) return sendJson(res, 403, { error: 'forbidden' });
@@ -98,6 +167,8 @@ export function startHttpApi({
 
       if (!authOk(req, tokenRef.current)) return sendJson(res, 401, { error: 'unauthorized' });
 
+      const governor = await getGovernor();
+
       if (url.pathname === '/status' && req.method === 'GET') {
         const tabId = getTabIdFromUrl(url) || defaultTabId;
         const st = await getStatus({ tabId });
@@ -106,13 +177,13 @@ export function startHttpApi({
 
       if (url.pathname === '/show' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         await onShow?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
       if (url.pathname === '/hide' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         await onHide?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
@@ -124,7 +195,7 @@ export function startHttpApi({
         const body = await parseBody(req);
         const key = (body.key ? String(body.key).trim() : '') || null;
         const name = (body.name ? String(body.name).trim() : '') || null;
-        const show = typeof body.show === 'boolean' ? body.show : envShowTabsDefault();
+        const show = typeof body.show === 'boolean' ? body.show : envShowTabsDefault() || governor.showTabsByDefault;
         const tabId = key ? await tabs.ensureTab({ key, name, show }) : await tabs.createTab({ name, show });
         if (show) await onShow?.({ tabId }).catch(() => {});
         return sendJson(res, 200, { ok: true, tabId });
@@ -161,7 +232,7 @@ export function startHttpApi({
         const body = await parseBody(req);
         const to = String(body.url || '').trim();
         if (!to) return sendJson(res, 400, { error: 'missing_url' });
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
         await controller.navigate(to);
         return sendJson(res, 200, { ok: true, tabId, url: await controller.getUrl() });
@@ -170,7 +241,7 @@ export function startHttpApi({
       if (url.pathname === '/ensure-ready' && req.method === 'POST') {
         const body = await parseBody(req);
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
         const st = await controller.ensureReady({ timeoutMs });
         return sendJson(res, 200, { ok: true, tabId, state: st });
@@ -181,16 +252,22 @@ export function startHttpApi({
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
         const prompt = String(body.prompt || '');
         const attachments = Array.isArray(body.attachments) ? body.attachments.map(String) : [];
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        checkAndConsumeQueryBudget({ tabId, governor });
+        inflight.queries += 1;
         const controller = tabs.getControllerById(tabId);
-        const result = await controller.query({ prompt, attachments, timeoutMs });
-        return sendJson(res, 200, { ok: true, tabId, result });
+        try {
+          const result = await controller.query({ prompt, attachments, timeoutMs });
+          return sendJson(res, 200, { ok: true, tabId, result });
+        } finally {
+          inflight.queries = Math.max(0, inflight.queries - 1);
+        }
       }
 
       if (url.pathname === '/read-page' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxChars = Number(body.maxChars || 0) || 200_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
         const text = await controller.readPageText({ maxChars });
         return sendJson(res, 200, { ok: true, tabId, text });
@@ -199,7 +276,7 @@ export function startHttpApi({
       if (url.pathname === '/download-images' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxImages = Number(body.maxImages || 0) || 6;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
         const files = await controller.downloadLastAssistantImages({ maxImages });
         return sendJson(res, 200, { ok: true, tabId, files });

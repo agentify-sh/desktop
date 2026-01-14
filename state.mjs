@@ -22,6 +22,50 @@ export function statePath(stateDir = defaultStateDir()) {
   return path.join(stateDir, 'state.json');
 }
 
+export function settingsPath(stateDir = defaultStateDir()) {
+  return path.join(stateDir, 'settings.json');
+}
+
+export function defaultSettings() {
+  return {
+    // Governor defaults (intentionally conservative).
+    maxInflightQueries: 2,
+    maxQueriesPerMinute: 12,
+    minTabGapMs: 1200,
+    minGlobalGapMs: 200,
+
+    // UX defaults.
+    showTabsByDefault: false,
+
+    // Acknowledgment for changing settings (UX only; not required for operation).
+    acknowledgedAt: null
+  };
+}
+
+export function normalizeSettings(input) {
+  const d = defaultSettings();
+  const s = input && typeof input === 'object' ? input : {};
+
+  const clampInt = (v, { min, max, fallback }) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    const i = Math.floor(n);
+    return Math.max(min, Math.min(max, i));
+  };
+
+  const clampMs = (v, { min, max, fallback }) => clampInt(v, { min, max, fallback });
+
+  const out = {
+    maxInflightQueries: clampInt(s.maxInflightQueries, { min: 1, max: 12, fallback: d.maxInflightQueries }),
+    maxQueriesPerMinute: clampInt(s.maxQueriesPerMinute, { min: 1, max: 600, fallback: d.maxQueriesPerMinute }),
+    minTabGapMs: clampMs(s.minTabGapMs, { min: 0, max: 60_000, fallback: d.minTabGapMs }),
+    minGlobalGapMs: clampMs(s.minGlobalGapMs, { min: 0, max: 10_000, fallback: d.minGlobalGapMs }),
+    showTabsByDefault: !!s.showTabsByDefault,
+    acknowledgedAt: typeof s.acknowledgedAt === 'string' && s.acknowledgedAt.trim() ? s.acknowledgedAt.trim() : null
+  };
+  return out;
+}
+
 export async function ensureStateDir(stateDir = defaultStateDir()) {
   await fs.mkdir(stateDir, { recursive: true });
 }
@@ -60,4 +104,20 @@ export async function readState(stateDir = defaultStateDir()) {
 export async function writeState(state, stateDir = defaultStateDir()) {
   await ensureStateDir(stateDir);
   await atomicWriteFile(statePath(stateDir), `${JSON.stringify(state, null, 2)}\n`);
+}
+
+export async function readSettings(stateDir = defaultStateDir()) {
+  try {
+    const raw = await fs.readFile(settingsPath(stateDir), 'utf8');
+    return normalizeSettings(JSON.parse(raw || '{}'));
+  } catch {
+    return defaultSettings();
+  }
+}
+
+export async function writeSettings(settings, stateDir = defaultStateDir()) {
+  await ensureStateDir(stateDir);
+  const normalized = normalizeSettings(settings);
+  await atomicWriteFile(settingsPath(stateDir), `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
+  return normalized;
 }

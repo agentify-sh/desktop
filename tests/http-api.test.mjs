@@ -314,3 +314,64 @@ test('http-api: shutdown calls onShutdown', async (t) => {
   await new Promise((r2) => setTimeout(r2, 10));
   assert.equal(called, 1);
 });
+
+test('http-api: query rate limits (qpm + inflight)', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({
+      query: async () => ({ text: 'ok', codeBlocks: [], meta: {} })
+    })
+  };
+
+  let inflightBlock = false;
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => {
+      if (inflightBlock) return { maxInflightQueries: 1, maxQueriesPerMinute: 100, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false };
+      return { maxInflightQueries: 2, maxQueriesPerMinute: 1, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false };
+    }
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r1 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi', attachments: [] } });
+  assert.equal(r1.res.status, 200);
+
+  const r2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2', attachments: [] } });
+  assert.equal(r2.res.status, 429);
+  assert.equal(r2.data.error, 'rate_limited');
+  assert.equal(r2.data.reason, 'qpm');
+
+  // Inflight: simulate by having controller.query hang while maxInflightQueries=1.
+  inflightBlock = true;
+  let resolveHang;
+  const hang = new Promise((r) => (resolveHang = r));
+  tabs.getControllerById = () => ({
+    query: async () => {
+      await hang;
+      return { text: 'ok', codeBlocks: [], meta: {} };
+    }
+  });
+
+  const p1 = req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'a', attachments: [] } });
+  // Let the first request enter inflight.
+  await new Promise((r) => setTimeout(r, 20));
+  const p2 = req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'b', attachments: [] } });
+
+  const p2Res = await p2;
+  assert.equal(p2Res.res.status, 429);
+  assert.equal(p2Res.data.reason, 'max_inflight');
+
+  resolveHang();
+  const p1Res = await p1;
+  assert.equal(p1Res.res.status, 200);
+});

@@ -56,6 +56,48 @@
         </section>
 
         <section class="card">
+          <div class="cardTitle">Settings (governor)</div>
+          <div class="hint">
+            These defaults exist to reduce accidental high-rate automation. Automating web UIs may violate website terms; use responsibly.
+          </div>
+          <div class="grid">
+            <label class="field">
+              <div class="label">Max in-flight queries</div>
+              <input id="setMaxInflight" type="number" min="1" max="12" step="1" />
+            </label>
+            <label class="field">
+              <div class="label">Max queries per minute</div>
+              <input id="setQpm" type="number" min="1" max="600" step="1" />
+            </label>
+            <label class="field">
+              <div class="label">Min gap per tab (ms)</div>
+              <input id="setTabGap" type="number" min="0" max="60000" step="50" />
+            </label>
+            <label class="field">
+              <div class="label">Min global gap (ms)</div>
+              <input id="setGlobalGap" type="number" min="0" max="10000" step="10" />
+            </label>
+          </div>
+          <div class="row">
+            <label class="checkbox">
+              <input id="setShowTabsDefault" type="checkbox" />
+              <span>Show new tab windows by default</span>
+            </label>
+          </div>
+          <div class="row">
+            <label class="checkbox">
+              <input id="setAcknowledge" type="checkbox" />
+              <span>I understand the risks and want to change these limits</span>
+            </label>
+            <div class="btnRow">
+              <button id="btnResetSettings" class="btn secondary">Reset</button>
+              <button id="btnSaveSettings" class="btn primary" disabled>Save</button>
+            </div>
+          </div>
+          <div id="settingsHint" class="hint"></div>
+        </section>
+
+        <section class="card">
           <div class="cardTitle">Help</div>
           <div class="hint">
             If a CAPTCHA/login challenge appears, Agentify will bring the relevant window forward and pause automation until you finish.
@@ -75,4 +117,3 @@
     <script src="./control-center.js"></script>
   </body>
 </html>
-
