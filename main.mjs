@@ -23,6 +23,17 @@ function argValue(name) {
   return process.argv[idx + 1] || null;
 }
 
+function buildChromeUserAgent() {
+  const platform =
+    process.platform === 'darwin'
+      ? 'Macintosh; Intel Mac OS X 10_15_7'
+      : process.platform === 'win32'
+        ? 'Windows NT 10.0; Win64; x64'
+        : 'X11; Linux x86_64';
+  const chromeVersion = process.versions?.chrome || '120.0.0.0';
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+}
+
 async function loadSelectors(stateDir) {
   const defaults = JSON.parse(await fs.readFile(path.join(__dirname, 'selectors.json'), 'utf8'));
   const overridePath = path.join(stateDir, 'selectors.override.json');
@@ -45,6 +56,14 @@ async function main() {
   const stateDir = argValue('--state-dir') || defaultStateDir();
   const basePort = Number(argValue('--port') || process.env.AGENTIFY_DESKTOP_PORT || 0);
   const startMinimized = argFlag('--start-minimized');
+
+  // Reduce obvious automation fingerprints (best-effort).
+  try {
+    app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+  } catch {}
+  try {
+    app.userAgentFallback = buildChromeUserAgent();
+  } catch {}
 
   app.setName('Agentify Desktop');
   app.setPath('userData', path.join(stateDir, 'electron-user-data'));
@@ -84,6 +103,7 @@ async function main() {
   const tabs = new TabManager({
     maxTabs: Number(process.env.AGENTIFY_DESKTOP_MAX_TABS || 12),
     onNeedsAttention,
+    userAgent: app.userAgentFallback,
     windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Agentify Desktop' },
     createController: async ({ tabId, win }) => {
       const controller = new ChatGPTController({

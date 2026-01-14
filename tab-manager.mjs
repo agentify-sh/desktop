@@ -17,11 +17,12 @@ class Mutex {
 }
 
 export class TabManager {
-  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults }) {
+  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults, userAgent }) {
     this.createController = createController;
     this.maxTabs = Math.max(1, Number(maxTabs) || 12);
     this.onNeedsAttention = onNeedsAttention;
     this.windowDefaults = windowDefaults || { width: 1100, height: 800, show: false, title: 'Agentify Desktop' };
+    this.userAgent = typeof userAgent === 'string' && userAgent.trim() ? userAgent.trim() : null;
 
     this.tabs = new Map(); // tabId -> { id, key, name, win, controller, createdAt, lastUsedAt }
     this.keyToId = new Map();
@@ -50,6 +51,11 @@ export class TabManager {
           ...(this.windowDefaults.webPreferences || {})
         }
       });
+      if (this.userAgent) {
+        try {
+          win.webContents.setUserAgent(this.userAgent);
+        } catch {}
+      }
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
       const controller = await this.createController({ tabId: id, win });
