@@ -31,6 +31,11 @@ cd desktop
 ./scripts/quickstart.sh
 ```
 
+To make newly-created tab windows visible by default (debug-friendly):
+```bash
+./scripts/quickstart.sh --show-tabs
+```
+
 Install dependencies:
 ```bash
 npm i
@@ -65,7 +70,9 @@ If you already had Codex open, restart it (or start a new session) so it reloads
 
 ## Tool names and visibility
 - Preferred tool names are `agentify_*` (for example: `agentify_query`, `agentify_ensure_ready`, `agentify_tabs`). Legacy `browser_*` names remain as aliases.
-- For debugging, you can make newly created per-session tab windows visible by default by registering the MCP server with:
+- For debugging, you can make newly-created tab windows visible by default by running:
+  - `./scripts/quickstart.sh --show-tabs`
+- If you register manually, pass the flag through to the MCP command:
   - `codex mcp add agentify-desktop -- node mcp-server.mjs --show-tabs`
 
 ## Limitations / robustness notes
