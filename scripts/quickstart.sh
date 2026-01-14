@@ -122,15 +122,15 @@ say "- If you already have Codex open, restart it (or start a new session) to pi
 if [[ "${SHOW_TABS}" -eq 1 ]]; then
   say "- Tabs visibility: --show-tabs is enabled, so new tabs will be shown by default."
 else
-  say "- Tabs visibility: default is hidden tabs; use the Control Center or agentify_show/browser_show to bring a tab forward."
+  say "- Tabs visibility: default is hidden tabs; use the Control Center or agentify_show to bring a tab forward."
 fi
 say "- In Codex, use the tools:"
-say "  - browser_ensure_ready   (waits for #prompt-textarea / prompt box)"
-say "  - browser_query          (send a prompt; use 'key' for parallel jobs)"
-say "  - browser_read_page      (read the current page/chat transcript text)"
+say "  - agentify_ensure_ready  (waits for #prompt-textarea / prompt box)"
+say "  - agentify_query         (send a prompt; use 'key' for parallel jobs)"
+say "  - agentify_read_page     (read the current page/chat transcript text)"
 say ""
 say "Troubleshooting:"
 say "- If you don't see the Control Center, click the app in the dock (macOS) or re-run this script."
-say "- To stop the app later, use the MCP tool: browser_shutdown"
+say "- To stop the app later, use the MCP tool: agentify_shutdown"
 say "- If selectors break due to UI changes, override them in:"
 say "  ${STATE_DIR}/selectors.override.json"

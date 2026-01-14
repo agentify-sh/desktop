@@ -10,18 +10,16 @@ const server = new McpServer({ name: 'agentify-desktop', version: '0.1.0' });
 const stateDir = defaultStateDir();
 const showTabs = process.argv.includes('--show-tabs');
 
-function registerAliasedTool(primaryName, aliasName, def, handler) {
-  server.registerTool(primaryName, def, handler);
-  if (aliasName && aliasName !== primaryName) server.registerTool(aliasName, def, handler);
+function registerTool(name, def, handler) {
+  server.registerTool(name, def, handler);
 }
 
 async function getConn() {
   return await ensureDesktopRunning({ stateDir, showTabs });
 }
 
-registerAliasedTool(
+registerTool(
   'agentify_query',
-  'browser_query',
   {
     description:
       'Send a prompt to the local Agentify Desktop session (ChatGPT web) and return the latest assistant response. If a CAPTCHA/login challenge appears, the desktop window will ask for user intervention and resume automatically.',
@@ -55,9 +53,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_read_page',
-  'browser_read_page',
   {
     description: 'Read text content from the active tab in the local Agentify Desktop window.',
     inputSchema: {
@@ -78,9 +75,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_navigate',
-  'browser_navigate',
   {
     description: 'Navigate the Agentify Desktop browser window to a URL (local UI automation).',
     inputSchema: {
@@ -96,9 +92,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_ensure_ready',
-  'browser_ensure_ready',
   {
     description:
       'Wait until ChatGPT is ready for input (e.g., after login/CAPTCHA). Triggers local user handoff if needed and resumes when the prompt textarea is visible.',
@@ -115,9 +110,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_show',
-  'browser_show',
   {
     description: 'Bring the Agentify Desktop window to the front.',
     inputSchema: { tabId: z.string().optional(), key: z.string().optional() }
@@ -129,9 +123,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_hide',
-  'browser_hide',
   { description: 'Minimize the Agentify Desktop window.', inputSchema: { tabId: z.string().optional(), key: z.string().optional() } },
   async ({ tabId, key }) => {
     const conn = await getConn();
@@ -140,9 +133,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_status',
-  'browser_status',
   {
     description: 'Get current URL and blocked/ready status for the Agentify Desktop window.',
     inputSchema: { tabId: z.string().optional().describe('Tab/session id to query.') }
@@ -155,9 +147,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_image_gen',
-  'browser_image_gen',
   {
     description:
       'Generate images via ChatGPT web UI (best-effort): sends the prompt, then downloads any images from the latest assistant message to a local folder and returns file paths.',
@@ -186,12 +177,11 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_download_images',
-  'browser_download_images',
   {
     description:
-      'Download images from the latest assistant message (best-effort). Useful if you generated images manually in the UI or via browser_query.',
+      'Download images from the latest assistant message (best-effort). Useful if you generated images manually in the UI or via agentify_query.',
     inputSchema: {
       tabId: z.string().optional().describe('Tab/session id to use.'),
       key: z.string().optional().describe('Stable tab key; creates a tab if missing.'),
@@ -206,9 +196,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_tabs',
-  'browser_tabs',
   {
     description: 'List current tabs/sessions (for parallel jobs).',
     inputSchema: {}
@@ -220,9 +209,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_tab_create',
-  'browser_tab_create',
   {
     description: 'Create (or ensure) a tab/session for a given key.',
     inputSchema: { key: z.string().optional(), name: z.string().optional(), show: z.boolean().optional().describe('Show the tab window immediately.') }
@@ -234,9 +222,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_tab_close',
-  'browser_tab_close',
   {
     description: 'Close a tab/session by tabId.',
     inputSchema: { tabId: z.string().describe('Tab id to close.') }
@@ -248,9 +235,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_shutdown',
-  'browser_shutdown',
   {
     description: 'Gracefully shut down the Agentify Desktop app.',
     inputSchema: {}
@@ -262,9 +248,8 @@ registerAliasedTool(
   }
 );
 
-registerAliasedTool(
+registerTool(
   'agentify_rotate_token',
-  'browser_rotate_token',
   {
     description: 'Rotate the local HTTP API bearer token (requires reconnect on subsequent calls).',
     inputSchema: {}

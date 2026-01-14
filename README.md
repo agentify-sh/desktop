@@ -59,17 +59,17 @@ Add the MCP server:
 codex mcp add agentify-desktop -- node mcp-server.mjs
 ```
 
-Then use tools like `browser_query` and pass a stable `key` (e.g. your repo name) to run parallel jobs without mixing contexts.
+Then use tools like `agentify_query` and pass a stable `key` (e.g. your repo name) to run parallel jobs without mixing contexts.
 
 If you already had Codex open, restart it (or start a new session) so it reloads MCP server config. You can confirm registration via `codex mcp list`.
 
 ## How to use (practical)
-- **Use ChatGPT normally (manual):** open the ChatGPT tab, write a plan/spec in the UI, then in Codex call `browser_read_page` to pull the transcript into your workflow.
-- **Drive ChatGPT from Codex:** call `browser_ensure_ready`, then `browser_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
-- **Generate images:** ask for images via `agentify_query` / `browser_query` (then call `agentify_download_images` / `browser_download_images`), or generate them manually in the UI and then call download.
+- **Use ChatGPT normally (manual):** open the ChatGPT tab, write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Generate images:** ask for images via `agentify_query` (then call `agentify_download_images`), or generate them manually in the UI and then call download.
 
 ## Tool names and visibility
-- Preferred tool names are `agentify_*` (for example: `agentify_query`, `agentify_ensure_ready`, `agentify_tabs`). Legacy `browser_*` names remain as aliases.
+- Tool names are `agentify_*` (for example: `agentify_query`, `agentify_ensure_ready`, `agentify_tabs`).
 - For debugging, you can make newly-created tab windows visible by default by running:
   - `./scripts/quickstart.sh --show-tabs`
 - If you register manually, pass the flag through to the MCP command:
