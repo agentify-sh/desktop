@@ -28,7 +28,6 @@ From anywhere:
 ```bash
 git clone git@github.com:agentify-sh/desktop.git
 cd desktop
-git switch feature/public-release-v1
 ./scripts/quickstart.sh
 ```
 
@@ -56,6 +55,8 @@ codex mcp add agentify-desktop -- node mcp-server.mjs
 ```
 
 Then use tools like `browser_query` and pass a stable `key` (e.g. your repo name) to run parallel jobs without mixing contexts.
+
+If you already had Codex open, restart it (or start a new session) so it reloads MCP server config. You can confirm registration via `codex mcp list`.
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
