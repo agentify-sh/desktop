@@ -344,8 +344,19 @@ async function main() {
     const workspace = String(args?.workspace || '').trim();
     if (!key) throw new Error('missing_key');
     if (!workspace) throw new Error('missing_workspace');
-    await setWorkspace(stateDir, { key, workspace: { root: workspace } });
+    const resolved = path.resolve(workspace);
+    const st = await fs.stat(resolved);
+    if (!st.isDirectory()) throw new Error('workspace_not_directory');
+    if (resolved === path.parse(resolved).root) throw new Error('workspace_cannot_be_filesystem_root');
+    await setWorkspace(stateDir, { key, workspace: { root: resolved, allowRoots: [resolved] } });
     return { ok: true };
+  });
+
+  ipcMain.handle('agentify:getWorkspaceForKey', async (_evt, args) => {
+    const key = String(args?.key || '').trim();
+    if (!key) throw new Error('missing_key');
+    const ws = await getWorkspace(stateDir, { key });
+    return { ok: true, workspace: ws };
   });
 
   ipcMain.handle('agentify:startOrchestrator', async (_evt, args) => {
