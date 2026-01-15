@@ -187,6 +187,247 @@ test('http-api: tabs list/create/close', async (t) => {
   assert.equal(cl.res.status, 200);
 });
 
+test('http-api: tabs/create returns 409 when max tabs reached', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => {
+      throw new Error('max_tabs_reached');
+    },
+    createTab: async () => {
+      throw new Error('max_tabs_reached');
+    },
+    closeTab: async () => true,
+    getControllerById: () => ({})
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r = await req({ port, token: 'secret', method: 'POST', pth: '/tabs/create', body: { key: 'projA' } });
+  assert.equal(r.res.status, 409);
+  assert.equal(r.data.error, 'max_tabs_reached');
+});
+
+test('http-api: show creates missing key tab (and hide does not)', async (t) => {
+  const created = [];
+  const tabs = {
+    listTabs: () => created.map((id) => ({ id, key: id.replace(/^tab-/, '') })),
+    ensureTab: async ({ key }) => {
+      const id = `tab-${key}`;
+      if (!created.includes(id)) created.push(id);
+      return id;
+    },
+    createTab: async () => {
+      const id = `tab-${created.length + 1}`;
+      created.push(id);
+      return id;
+    },
+    closeTab: async () => true,
+    getControllerById: () => ({})
+  };
+
+  let shown = [];
+  let hidden = [];
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    onShow: async ({ tabId }) => shown.push(tabId),
+    onHide: async ({ tabId }) => hidden.push(tabId),
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  // show should create
+  const s1 = await req({ port, token: 'secret', method: 'POST', pth: '/show', body: { key: 'projA' } });
+  assert.equal(s1.res.status, 200);
+  assert.equal(created.includes('tab-projA'), true);
+  assert.deepEqual(shown.includes('tab-projA'), true);
+
+  // hide should NOT create
+  const h1 = await req({ port, token: 'secret', method: 'POST', pth: '/hide', body: { key: 'projB' } });
+  assert.equal(h1.res.status, 404);
+  assert.equal(h1.data.error, 'tab_not_found');
+  assert.equal(created.includes('tab-projB'), false);
+
+  // hide should work for existing
+  const h2 = await req({ port, token: 'secret', method: 'POST', pth: '/hide', body: { key: 'projA' } });
+  assert.equal(h2.res.status, 200);
+  assert.deepEqual(hidden.includes('tab-projA'), true);
+});
+
+test('http-api: operations run through controller.runExclusive when available', async (t) => {
+  let inExclusive = false;
+  const calls = [];
+  const controller = {
+    runExclusive: async (fn) => {
+      assert.equal(inExclusive, false);
+      inExclusive = true;
+      try {
+        return await fn();
+      } finally {
+        inExclusive = false;
+      }
+    },
+    navigate: async () => {
+      assert.equal(inExclusive, true);
+      calls.push('navigate');
+    },
+    ensureReady: async () => {
+      assert.equal(inExclusive, true);
+      calls.push('ensureReady');
+      return { ok: true };
+    },
+    query: async () => {
+      assert.equal(inExclusive, true);
+      calls.push('query');
+      return { text: 'ok' };
+    },
+    readPageText: async () => {
+      assert.equal(inExclusive, true);
+      calls.push('readPageText');
+      return 'page';
+    },
+    downloadLastAssistantImages: async () => {
+      assert.equal(inExclusive, true);
+      calls.push('downloadLastAssistantImages');
+      return [];
+    },
+    getUrl: async () => 'https://chatgpt.com/'
+  };
+
+  const tabs = {
+    listTabs: () => [{ id: 't0', key: 'default' }],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => controller
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  await req({ port, token: 'secret', method: 'POST', pth: '/navigate', body: { url: 'https://chatgpt.com/' } });
+  await req({ port, token: 'secret', method: 'POST', pth: '/ensure-ready', body: { timeoutMs: 1000 } });
+  await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi' } });
+  await req({ port, token: 'secret', method: 'POST', pth: '/read-page', body: { maxChars: 10 } });
+  await req({ port, token: 'secret', method: 'POST', pth: '/download-images', body: { maxImages: 1 } });
+
+  assert.deepEqual(calls, ['navigate', 'ensureReady', 'query', 'readPageText', 'downloadLastAssistantImages']);
+});
+
+test('http-api: query returns 429 when maxParallelQueries exceeded', async (t) => {
+  let started = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+
+  const controller = {
+    runExclusive: async (fn) => await fn(),
+    query: async () => {
+      started += 1;
+      await gate;
+      return { text: 'ok' };
+    }
+  };
+
+  const tabs = {
+    listTabs: () => [{ id: 't0', key: 'default' }],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => controller
+  };
+
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    maxParallelQueries: 1,
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const q1 = req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi' } });
+  // Give the server a moment to enter the handler and increment inflight.
+  for (let i = 0; i < 50 && started === 0; i++) await new Promise((r) => setTimeout(r, 5));
+
+  const q2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2' } });
+  assert.equal(q2.res.status, 429);
+  assert.equal(q2.data.error, 'too_many_queries');
+
+  release();
+  const q1r = await q1;
+  assert.equal(q1r.res.status, 200);
+});
+
+test('http-api: query pacing returns 429 with retryAfterMs when max wait is 0', async (t) => {
+  let calls = 0;
+  const controller = {
+    runExclusive: async (fn) => await fn(),
+    query: async () => {
+      calls += 1;
+      return { text: 'ok' };
+    }
+  };
+  const tabs = {
+    listTabs: () => [{ id: 't0', key: 'default' }],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => controller
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    maxParallelQueries: 10,
+    minQueryGapMs: 5_000,
+    minQueryGapMsGlobal: 0,
+    queryGapMaxWaitMs: 0,
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const q1 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi' } });
+  assert.equal(q1.res.status, 200);
+
+  const q2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2' } });
+  assert.equal(q2.res.status, 429);
+  assert.equal(q2.data.error, 'rate_limited');
+  assert.equal(typeof q2.data.retryAfterMs, 'number');
+  assert.ok(q2.data.retryAfterMs > 0);
+
+  assert.equal(calls, 1);
+});
+
 test('http-api: invalid tabId returns 404', async (t) => {
   const tabs = {
     listTabs: () => [],

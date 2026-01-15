@@ -1,6 +1,6 @@
 # Agentify Desktop
 
-Agentify Desktop is a local-first desktop app that lets AI coding tools drive your **existing web subscriptions** (starting with ChatGPT) through a real, logged-in browser session on your machine.
+Agentify Desktop is a local-first desktop app that lets AI coding tools drive your existing web subscriptions (starting with ChatGPT) through a real, logged-in browser session on your machine.
 
 It exposes an **MCP server** so tools like Codex can:
 - Send prompts to the web UI and read back the response
@@ -14,50 +14,75 @@ It exposes an **MCP server** so tools like Codex can:
 
 **Planned**
 - `claude.ai`
-- `gemini.google.com`
+- `grok.com`
+- `aistudio.google.com`
 
 ## CAPTCHA policy (human-in-the-loop)
 Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solvers. If a human verification appears, the app pauses automation, brings the relevant window to the front, and waits for you to complete the check manually.
 
-## Install
-Requirements:
+## Requirements
 - Node.js 20+ (22 recommended)
+- Codex CLI (optional, for MCP)
 
 ## Quickstart (macOS/Linux)
-From anywhere:
+This installs dependencies, registers the MCP server with Codex (if installed), and starts Agentify Desktop.
+
 ```bash
 git clone git@github.com:agentify-sh/desktop.git
 cd desktop
-git switch feature/public-release-v1
-./scripts/quickstart.sh
+./scripts/quickstart.sh [--show-tabs]
 ```
 
-Install dependencies:
+Then:
+- Sign in to `https://chatgpt.com/` in the Agentify Desktop window.
+- Restart Codex so it picks up the MCP tool list.
+
+## Manual install & run
 ```bash
 npm i
-```
-
-## Run
-Start the desktop app:
-```bash
 npm run start
 ```
 
-Sign in to ChatGPT in the window.
+## Control Center
+Use the app menu `Agentify Desktop → Control Center…` to:
+- See and manage tabs (show/hide/close) for parallel jobs
+- Edit safety settings saved locally under `~/.agentify-desktop/config.json`
 
 ## Connect from Codex (MCP)
 Add the MCP server:
 ```bash
-codex mcp add agentify-desktop -- node mcp-server.mjs
+codex mcp add agentify-desktop -- node /ABS/PATH/TO/desktop/mcp-server.mjs [--show-tabs]
 ```
 
-Then use tools like `browser_query` and pass a stable `key` (e.g. your repo name) to run parallel jobs without mixing contexts.
+Verify it is installed:
+```bash
+codex mcp list
+```
+
+Restart Codex.
+
+Then use tools like `agentify_query` and pass a stable `key` (e.g. `my-repo`) to run parallel jobs without mixing contexts.
+
+Notes:
+- Tool names are `agentify_*`.
+- To make newly-created tab windows visible (instead of hidden/minimized), start the MCP server with `--show-tabs`, or pass `show: true` to `agentify_tab_create`.
+
+## Common workflows
+- **Parallel jobs:** call `agentify_tab_create` with a unique `key` per project, then use that `key` for `agentify_query` / `agentify_read_page`.
+- **Plan in ChatGPT:** `agentify_query` with your planning prompt, then `agentify_read_page` if you need the full page text again.
+- **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
+- **Generate and download images:** use `agentify_image_gen`, or run `agentify_query` and then `agentify_download_images`.
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
 - **Completion detection:** waiting for “stop generating” to disappear + text stability works well, but can mis-detect on very long outputs or intermittent streaming pauses.
 - **Image downloads:** prefers `<img>` elements in the latest assistant message; some UI modes may render images via nonstandard elements.
-- **Parallelism model:** “tabs” are separate hidden windows; they can run in parallel without stealing focus unless a human check is required.
+- **Parallelism model:** “tabs” are separate windows; by default they are created hidden/minimized, but can be shown via `--show-tabs` or `agentify_tab_create(show: true)`.
+- **Spam guard:** the local HTTP API limits concurrent `/query` calls across all tabs (default `6`). Override with `AGENTIFY_DESKTOP_MAX_PARALLEL_QUERIES`.
+- **Request pacing:** `/query` is paced to be less “machine-like” (defaults: per-tab `250ms`, global `100ms`). Override with:
+  - `AGENTIFY_DESKTOP_MIN_QUERY_GAP_MS`
+  - `AGENTIFY_DESKTOP_MIN_QUERY_GAP_MS_GLOBAL`
+  - `AGENTIFY_DESKTOP_QUERY_GAP_MAX_WAIT_MS` (0 = return `429 rate_limited` instead of waiting)
 - **Security knobs:** default is loopback-only + bearer token; token rotation and shutdown are supported via MCP tools.
 
 ## Build installers (unsigned)

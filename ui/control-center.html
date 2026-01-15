@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentify Desktop</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; }
+      h1 { margin: 0 0 12px; font-size: 18px; }
+      .card { border: 1px solid rgba(127,127,127,.25); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      label { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+      input[type="text"], input[type="number"] { padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); min-width: 180px; }
+      button { padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(127,127,127,.35); background: rgba(127,127,127,.12); cursor: pointer; }
+      button.primary { background: rgba(60,120,240,.18); }
+      button.danger { background: rgba(240,80,80,.16); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(127,127,127,.2); }
+      .muted { opacity: .75; font-size: 12px; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+      .spacer { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <h1>Agentify Desktop</h1>
+
+    <div class="card">
+      <div class="row">
+        <div class="muted">
+          Human-in-the-loop: if a CAPTCHA/login check appears, Agentify pauses and brings the window to the front for you to complete it.
+        </div>
+        <div class="spacer"></div>
+        <button id="btnRefresh" class="primary">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <strong>Tabs</strong>
+        <span class="muted">Create a tab per project key for parallel jobs.</span>
+        <div class="spacer"></div>
+      </div>
+      <div class="row" style="margin-bottom:10px">
+        <label>Key <input id="newKey" type="text" placeholder="my-project" /></label>
+        <label>Name <input id="newName" type="text" placeholder="optional" /></label>
+        <label><input id="newShow" type="checkbox" /> Show</label>
+        <button id="btnCreate">Create/Ensure</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Name</th>
+            <th class="mono">tabId</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tabsBody"></tbody>
+      </table>
+      <div class="muted" style="margin-top:8px">
+        Tip: use <span class="mono">agentify_tab_create</span> from Codex for parallel jobs; this UI is for local visibility and basic management.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <strong>Safety settings</strong>
+        <span class="muted">Saved locally under <span class="mono">~/.agentify-desktop/config.json</span>. Some settings require restart.</span>
+      </div>
+      <div class="row">
+        <label><input id="cfgShowTabs" type="checkbox" /> Show tabs by default</label>
+        <label>Max tabs <input id="cfgMaxTabs" type="number" min="1" max="50" /></label>
+        <label>Max parallel queries <input id="cfgMaxParallelQueries" type="number" min="1" max="50" /></label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label>Min per-tab gap (ms) <input id="cfgMinQueryGapMs" type="number" min="0" max="30000" /></label>
+        <label>Min global gap (ms) <input id="cfgMinQueryGapMsGlobal" type="number" min="0" max="30000" /></label>
+        <label>Gap max wait (ms) <input id="cfgQueryGapMaxWaitMs" type="number" min="0" max="120000" /></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnSaveCfg" class="primary">Save</button>
+        <button id="btnOpenState">Open state folder</button>
+        <button id="btnRestartHint">Restart hint</button>
+        <div id="cfgMsg" class="muted"></div>
+      </div>
+    </div>
+
+    <script src="./control-center.js"></script>
+  </body>
+</html>
+

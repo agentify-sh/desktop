@@ -45,6 +45,10 @@ export class ChatGPTController {
     this.mouse = { x: 30, y: 30 };
   }
 
+  async runExclusive(fn) {
+    return await this.mutex.run(fn);
+  }
+
   async navigate(url) {
     await this.loadURL(url);
   }
@@ -395,14 +399,11 @@ export class ChatGPTController {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('missing_prompt');
     if (prompt.length > 200_000) throw new Error('prompt_too_large');
 
-    return await this.mutex.run(async () => {
-      await this.ensureReady({ timeoutMs });
-      await this.#attachFiles(attachments);
-      await this.#typePrompt(prompt);
-      await this.#clickSend();
-      const result = await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
-      return result;
-    });
+    await this.ensureReady({ timeoutMs });
+    await this.#attachFiles(attachments);
+    await this.#typePrompt(prompt);
+    await this.#clickSend();
+    return await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
   }
 
   async getLastAssistantImages({ maxImages = 6 } = {}) {

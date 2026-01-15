@@ -95,11 +95,11 @@ export class TabManager {
     });
   }
 
-  async ensureTab({ key, name } = {}) {
+  async ensureTab({ key, name, show = false } = {}) {
     if (!key) throw new Error('missing_key');
     const existing = this.keyToId.get(key);
     if (existing) return existing;
-    return await this.createTab({ key, name, show: false });
+    return await this.createTab({ key, name, show: !!show });
   }
 
   listTabs() {
