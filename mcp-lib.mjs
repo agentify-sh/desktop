@@ -66,7 +66,8 @@ export async function ensureDesktopRunning({
   stateDir,
   fetchImpl = fetch,
   spawnImpl = spawn,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
+  showTabsByDefault = false
 }) {
   const conn = await loadConnection({ stateDir });
   if (conn) {
@@ -85,7 +86,11 @@ export async function ensureDesktopRunning({
 
   spawnImpl(electronBin, [entry], {
     stdio: 'ignore',
-    env: { ...process.env, AGENTIFY_DESKTOP_STATE_DIR: stateDir }
+    env: {
+      ...process.env,
+      AGENTIFY_DESKTOP_STATE_DIR: stateDir,
+      ...(showTabsByDefault ? { AGENTIFY_DESKTOP_SHOW_TABS_BY_DEFAULT: '1' } : {})
+    }
   })?.unref?.();
 
   const start = Date.now();

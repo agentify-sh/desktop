@@ -20,6 +20,10 @@ function sendJson(res, code, body) {
   res.end(data);
 }
 
+async function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function parseBody(req, { maxBytes = 2_000_000 } = {}) {
   const chunks = [];
   let total = 0;
@@ -60,12 +64,23 @@ function getTabIdFromUrl(url) {
   return tabId || null;
 }
 
-async function resolveTab({ tabs, defaultTabId, body, url }) {
+async function runExclusive(controller, fn) {
+  if (controller && typeof controller.runExclusive === 'function') return await controller.runExclusive(fn);
+  return await fn();
+}
+
+async function resolveTab({ tabs, defaultTabId, body, url, show = false }) {
   const tabId = (body?.tabId ? String(body.tabId).trim() : '') || getTabIdFromUrl(url) || null;
   const key = (body?.key ? String(body.key).trim() : '') || null;
   const name = (body?.name ? String(body.name).trim() : '') || null;
+  const createIfMissing = body?.createIfMissing !== undefined ? !!body.createIfMissing : true;
   if (tabId) return tabId;
-  if (key) return await tabs.ensureTab({ key, name });
+  if (key) {
+    if (createIfMissing) return await tabs.ensureTab({ key, name, show: !!show });
+    const existing = (tabs.listTabs?.() || []).find((t) => t?.key === key);
+    if (existing?.id) return existing.id;
+    throw new Error('tab_not_found');
+  }
   return defaultTabId;
 }
 
@@ -77,12 +92,25 @@ export function startHttpApi({
   defaultTabId,
   serverId,
   stateDir,
+  showTabsByDefault = false,
+  maxParallelQueries = 6,
+  minQueryGapMs = 250,
+  minQueryGapMsGlobal = 100,
+  queryGapMaxWaitMs = 5_000,
   onShow,
   onHide,
   onShutdown,
   getStatus
 }) {
   const tokenRef = typeof token === 'string' ? { current: token } : token;
+  const maxQ = Math.max(1, Number(maxParallelQueries) || 6);
+  let inflightQueries = 0;
+  const gapPerTabMs = Math.max(0, Number(minQueryGapMs) || 0);
+  const gapGlobalMs = Math.max(0, Number(minQueryGapMsGlobal) || 0);
+  const gapMaxWaitMs = Math.max(0, Number(queryGapMaxWaitMs) || 0);
+  let lastQueryAtGlobal = 0;
+  const lastQueryAtByTabId = new Map();
+
   const server = http.createServer(async (req, res) => {
     try {
       if (!isLoopback(req.socket?.remoteAddress)) return sendJson(res, 403, { error: 'forbidden' });
@@ -101,13 +129,19 @@ export function startHttpApi({
 
       if (url.pathname === '/show' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: true });
         await onShow?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
       if (url.pathname === '/hide' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({
+          tabs,
+          defaultTabId,
+          body: { ...body, createIfMissing: false },
+          url,
+          show: !!showTabsByDefault
+        });
         await onHide?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
@@ -119,7 +153,9 @@ export function startHttpApi({
         const body = await parseBody(req);
         const key = (body.key ? String(body.key).trim() : '') || null;
         const name = (body.name ? String(body.name).trim() : '') || null;
-        const tabId = key ? await tabs.ensureTab({ key, name }) : await tabs.createTab({ name, show: false });
+        const show = typeof body.show === 'boolean' ? body.show : !!showTabsByDefault;
+        const tabId = key ? await tabs.ensureTab({ key, name, show }) : await tabs.createTab({ name, show });
+        if (show) await onShow?.({ tabId }).catch(() => {});
         return sendJson(res, 200, { ok: true, tabId });
       }
       if (url.pathname === '/tabs/close' && req.method === 'POST') {
@@ -154,47 +190,72 @@ export function startHttpApi({
         const body = await parseBody(req);
         const to = String(body.url || '').trim();
         if (!to) return sendJson(res, 400, { error: 'missing_url' });
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: !!showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
-        await controller.navigate(to);
+        await runExclusive(controller, async () => controller.navigate(to));
         return sendJson(res, 200, { ok: true, tabId, url: await controller.getUrl() });
       }
 
       if (url.pathname === '/ensure-ready' && req.method === 'POST') {
         const body = await parseBody(req);
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: !!showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
-        const st = await controller.ensureReady({ timeoutMs });
+        const st = await runExclusive(controller, async () => controller.ensureReady({ timeoutMs }));
         return sendJson(res, 200, { ok: true, tabId, state: st });
       }
 
       if (url.pathname === '/query' && req.method === 'POST') {
+        if (inflightQueries >= maxQ) return sendJson(res, 429, { error: 'too_many_queries' });
         const body = await parseBody(req, { maxBytes: 5_000_000 });
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
         const prompt = String(body.prompt || '');
         const attachments = Array.isArray(body.attachments) ? body.attachments.map(String) : [];
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: !!showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
-        const result = await controller.query({ prompt, attachments, timeoutMs });
-        return sendJson(res, 200, { ok: true, tabId, result });
+
+        // Pacing: avoid spammy request patterns across tabs and within a tab.
+        if (gapPerTabMs > 0 || gapGlobalMs > 0) {
+          const now = Date.now();
+          const lastTab = lastQueryAtByTabId.get(tabId) || 0;
+          const nextAllowed = Math.max(lastTab + gapPerTabMs, lastQueryAtGlobal + gapGlobalMs);
+          if (now < nextAllowed) {
+            const waitMs = nextAllowed - now;
+            if (gapMaxWaitMs > 0 && waitMs <= gapMaxWaitMs) {
+              await sleep(waitMs);
+            } else {
+              return sendJson(res, 429, { error: 'rate_limited', retryAfterMs: waitMs });
+            }
+          }
+        }
+
+        inflightQueries += 1;
+        try {
+          const startedAt = Date.now();
+          const result = await runExclusive(controller, async () => controller.query({ prompt, attachments, timeoutMs }));
+          lastQueryAtByTabId.set(tabId, startedAt);
+          lastQueryAtGlobal = startedAt;
+          return sendJson(res, 200, { ok: true, tabId, result });
+        } finally {
+          inflightQueries = Math.max(0, inflightQueries - 1);
+        }
       }
 
       if (url.pathname === '/read-page' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxChars = Number(body.maxChars || 0) || 200_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: !!showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
-        const text = await controller.readPageText({ maxChars });
+        const text = await runExclusive(controller, async () => controller.readPageText({ maxChars }));
         return sendJson(res, 200, { ok: true, tabId, text });
       }
 
       if (url.pathname === '/download-images' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxImages = Number(body.maxImages || 0) || 6;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, show: !!showTabsByDefault });
         const controller = tabs.getControllerById(tabId);
-        const files = await controller.downloadLastAssistantImages({ maxImages });
+        const files = await runExclusive(controller, async () => controller.downloadLastAssistantImages({ maxImages }));
         return sendJson(res, 200, { ok: true, tabId, files });
       }
 
