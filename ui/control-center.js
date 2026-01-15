@@ -31,6 +31,7 @@ function setChecked(id, value) {
 async function refresh() {
   const state = await window.agentifyDesktop.getState();
   const settings = await window.agentifyDesktop.getSettings();
+  const orch = await window.agentifyDesktop.getOrchestrators();
 
   const vendorSelect = el('vendorSelect');
   vendorSelect.innerHTML = '';
@@ -114,6 +115,14 @@ async function refresh() {
   setChecked('setAcknowledge', false);
   el('btnSaveSettings').disabled = true;
   el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
+
+  // Orchestrator status.
+  const running = Array.isArray(orch?.running) ? orch.running : [];
+  const statusLine =
+    running.length === 0
+      ? 'No orchestrators running.'
+      : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
+  el('orchStatus').textContent = statusLine;
 }
 
 async function main() {
@@ -138,6 +147,41 @@ async function main() {
       await refresh();
     } catch (e) {
       el('createHint').textContent = `Create failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  const orchRefresh = async () => {
+    await refresh();
+  };
+  el('btnOrchRefresh').onclick = () => orchRefresh().catch(() => {});
+
+  el('btnOrchStart').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    const workspace = String(el('orchWorkspace').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      if (workspace) await window.agentifyDesktop.setWorkspaceForKey({ key, workspace });
+      await window.agentifyDesktop.startOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Start failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchStop').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      await window.agentifyDesktop.stopOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
     }
   };
 
