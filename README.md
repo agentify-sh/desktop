@@ -84,6 +84,14 @@ Agentify Desktop includes a built-in “governor” to reduce accidental high-ra
 
 You can adjust these limits in the Control Center **Settings (governor)** section after acknowledging the disclaimer.
 
+## Single-chat emulator (experimental)
+Agentify Desktop can optionally run a local “orchestrator” that watches a ChatGPT thread for fenced JSON tool requests like:
+```json
+{"agentify_tool":"codex.run","id":"<uuid>","key":"my-project","mode":"interactive","args":{"prompt":"Implement X and run tests."}}
+```
+
+It then runs Codex CLI locally and posts back a result block + a bounded “review packet” diff. Manage it from the Control Center under **Orchestrator**.
+
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
 - **Completion detection:** waiting for “stop generating” to disappear + text stability works well, but can mis-detect on very long outputs or intermittent streaming pauses.

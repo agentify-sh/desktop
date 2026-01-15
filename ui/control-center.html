@@ -56,6 +56,31 @@
         </section>
 
         <section class="card">
+          <div class="cardTitle">Orchestrator (single-chat emulator)</div>
+          <div class="hint">
+            Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
+          </div>
+          <div class="grid">
+            <label class="field">
+              <div class="label">Project key</div>
+              <input id="orchKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Workspace path (optional)</div>
+              <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
+            </label>
+          </div>
+          <div class="row">
+            <div class="btnRow">
+              <button id="btnOrchStart" class="btn primary">Start</button>
+              <button id="btnOrchStop" class="btn secondary">Stop</button>
+            </div>
+            <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
+          </div>
+          <div id="orchStatus" class="hint"></div>
+        </section>
+
+        <section class="card">
           <div class="cardTitle">Settings (governor)</div>
           <div class="hint">
             These defaults exist to reduce accidental high-rate automation. Automating web UIs may violate website terms; use responsibly.
