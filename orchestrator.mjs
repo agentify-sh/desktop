@@ -9,6 +9,9 @@ import { buildReviewPacket } from './orchestrator/git-diff.mjs';
 import { formatResultBlock, makeChunkedMessages } from './orchestrator/posting.mjs';
 import { getSession, setSession, getWorkspace, setWorkspace, isHandled, markHandled, loadHandled } from './orchestrator/storage.mjs';
 import { runCodexExec } from './orchestrator/codex.mjs';
+import { appendLog } from './orchestrator/logging.mjs';
+import { assertWithin } from './orchestrator/security.mjs';
+import fs from 'node:fs/promises';
 
 function argValue(name) {
   const idx = process.argv.indexOf(name);
@@ -69,12 +72,13 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
   const prompt = String(args.prompt || '').trim();
   if (!prompt) throw new Error('missing_prompt');
 
-  let workspaceDir = await getWorkspace(stateDir, { key });
-  if (!workspaceDir) {
-    workspaceDir = await detectWorkspaceRoot(process.cwd());
-    await setWorkspace(stateDir, { key, workspace: { root: workspaceDir } });
+  let ws = await getWorkspace(stateDir, { key });
+  if (!ws) {
+    const root = await detectWorkspaceRoot(process.cwd());
+    ws = await setWorkspace(stateDir, { key, workspace: { root } });
   }
-  workspaceDir = path.resolve(workspaceDir?.root || workspaceDir);
+  const workspaceDir = path.resolve(ws.root);
+  assertWithin({ filePath: workspaceDir, allowedRoots: ws.allowRoots });
 
   const testCommand = (await detectTestCommand(workspaceDir)) || null;
 
@@ -90,6 +94,7 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
     await sendNoWait(conn, { key, text: `Progress update (no reply needed): ${msg}`, stopAfterSend: true }).catch(() => {});
   };
 
+  await appendLog(stateDir, key, `codex.run start mode=${mode}`);
   const codexResult = await runCodexExec({
     workspaceDir,
     prompt,
@@ -109,6 +114,7 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
       }
     }
   });
+  await appendLog(stateDir, key, `codex.run exit ok=${codexResult.ok} code=${codexResult.exit?.code ?? 'null'}`);
 
   if (mode === 'interactive' && codexResult.sessionId) {
     await setSession(stateDir, { key, session: { sessionId: codexResult.sessionId, updatedAt: new Date().toISOString() } });
@@ -147,12 +153,14 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
 }
 
 async function handleGitDiff({ stateDir, key, args, conn }) {
-  let workspaceDir = await getWorkspace(stateDir, { key }).catch(() => null);
-  if (!workspaceDir) {
-    workspaceDir = await detectWorkspaceRoot(process.cwd());
-    await setWorkspace(stateDir, { key, workspace: { root: workspaceDir } });
+  let ws = await getWorkspace(stateDir, { key });
+  if (!ws) {
+    const root = await detectWorkspaceRoot(process.cwd());
+    ws = await setWorkspace(stateDir, { key, workspace: { root } });
   }
-  workspaceDir = path.resolve(workspaceDir?.root || workspaceDir);
+  const workspaceDir = path.resolve(ws.root);
+  assertWithin({ filePath: workspaceDir, allowedRoots: ws.allowRoots });
+  await appendLog(stateDir, key, 'git.diff start');
   const diffPacket = await buildReviewPacket({ workspaceDir, maxChars: Number(args.maxChars || 35_000) || 35_000 });
   const result = {
     agentify_result_for: args.id,
@@ -167,16 +175,19 @@ async function handleGitDiff({ stateDir, key, args, conn }) {
     await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
     await sleep(400);
   }
+  await appendLog(stateDir, key, 'git.diff done');
 }
 
 async function handleTestsRun({ stateDir, key, args, conn }) {
-  let workspaceDir = await getWorkspace(stateDir, { key }).catch(() => null);
-  if (!workspaceDir) {
-    workspaceDir = await detectWorkspaceRoot(process.cwd());
-    await setWorkspace(stateDir, { key, workspace: { root: workspaceDir } });
+  let ws = await getWorkspace(stateDir, { key });
+  if (!ws) {
+    const root = await detectWorkspaceRoot(process.cwd());
+    ws = await setWorkspace(stateDir, { key, workspace: { root } });
   }
-  workspaceDir = path.resolve(workspaceDir?.root || workspaceDir);
+  const workspaceDir = path.resolve(ws.root);
+  assertWithin({ filePath: workspaceDir, allowedRoots: ws.allowRoots });
   const testCommand = (await detectTestCommand(workspaceDir)) || null;
+  await appendLog(stateDir, key, `tests.run start cmd=${testCommand || 'none'}`);
   const tests = await runTestsMaybe({ workspaceDir, testCommand, timeoutMs: Number(args.timeoutMs || 0) || 20 * 60_000 });
   const result = {
     agentify_result_for: args.id,
@@ -187,6 +198,41 @@ async function handleTestsRun({ stateDir, key, args, conn }) {
   for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
     await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
     await sleep(400);
+  }
+  await appendLog(stateDir, key, `tests.run done ok=${tests.ok}`);
+}
+
+async function handleFsRead({ stateDir, key, args, conn }) {
+  const file = String(args.path || '').trim();
+  if (!file) throw new Error('missing_path');
+  const maxBytes = Math.max(1, Math.min(200_000, Number(args.maxBytes || 50_000) || 50_000));
+
+  const ws = await getWorkspace(stateDir, { key });
+  if (!ws?.root) throw new Error('missing_workspace');
+  const allowRoots = ws.allowRoots || [ws.root];
+  const abs = path.resolve(ws.root, file);
+  assertWithin({ filePath: abs, allowedRoots: allowRoots });
+
+  await appendLog(stateDir, key, `fs.read ${abs}`);
+  const buf = await fs.readFile(abs);
+  const sliced = buf.subarray(0, maxBytes);
+  const text = sliced.toString('utf8');
+  const truncated = buf.length > maxBytes;
+
+  const result = {
+    agentify_result_for: args.id,
+    ok: true,
+    file,
+    bytes: buf.length,
+    truncated
+  };
+  const body =
+    `Agentify fs.read:\n\n` +
+    formatResultBlock(result) +
+    `\n\`\`\`\n${text}\n\`\`\`\n`;
+  for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
+    await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
+    await sleep(350);
   }
 }
 
@@ -203,6 +249,10 @@ async function executeTool({ stateDir, req, conn }) {
     await handleTestsRun({ stateDir, key: req.key, args: { ...req.args, id: req.id }, conn });
     return;
   }
+  if (req.tool === 'fs.read') {
+    await handleFsRead({ stateDir, key: req.key, args: { ...req.args, id: req.id }, conn });
+    return;
+  }
   const err = new Error('unknown_tool');
   err.data = { tool: req.tool };
   throw err;
@@ -216,6 +266,7 @@ async function main() {
   const once = argFlag('--once');
 
   const conn = await ensureDesktopRunning({ stateDir });
+  await appendLog(stateDir, key, 'orchestrator started');
   await ensureReady(conn, { key }).catch(() => {});
 
   while (true) {
@@ -236,6 +287,7 @@ async function main() {
         // Post parse errors as a hint but don't loop endlessly.
         const msg = `Agentify orchestrator error: ${e?.message || String(e)}`;
         await sendNoWait(conn, { key, text: msg, stopAfterSend: true }).catch(() => {});
+        await appendLog(stateDir, key, `error: ${e?.message || String(e)}`);
       }
     }
 
