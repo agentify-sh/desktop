@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { defaultStateDir } from './state.mjs';
 import { ensureDesktopRunning, requestJson } from './mcp-lib.mjs';
-import { parseAgentifyToolBlocks, normalizeToolRequest, findNextUnHandled } from './orchestrator/protocol.mjs';
+import { parseAgentifyToolBlocks, normalizeToolRequest, findOldestUnHandled } from './orchestrator/protocol.mjs';
 import { detectWorkspaceRoot, detectTestCommand } from './orchestrator/workspace.mjs';
 import { buildReviewPacket } from './orchestrator/git-diff.mjs';
 import { formatResultBlock, makeChunkedMessages } from './orchestrator/posting.mjs';
@@ -273,21 +273,36 @@ async function main() {
     const text = await readThread(conn, { key, maxChars }).catch(() => '');
     const blocks = parseAgentifyToolBlocks(text);
     const handled = await loadHandled(stateDir).catch(() => ({ keys: {} }));
-    const last =
-      findNextUnHandled(blocks, (k, id) => !!handled?.keys?.[String(k)]?.[String(id)]) || null;
-    if (last) {
+    let executed = 0;
+    while (executed < 3) {
+      const next = findOldestUnHandled(blocks, (k, id) => !!handled?.keys?.[String(k)]?.[String(id)], { keyFilter: key });
+      if (!next) break;
       try {
-        const req = normalizeToolRequest(last, { defaultKey: key });
+        const req = normalizeToolRequest(next, { defaultKey: key });
+        // Hard-scope: this orchestrator only executes its own key.
+        if (req.key !== key) {
+          await markHandled(stateDir, { key, id: req.id, status: 'skipped', meta: { reason: 'wrong_key', tool: req.tool } });
+          handled.keys[key] = handled.keys[key] || {};
+          handled.keys[key][req.id] = { status: 'skipped' };
+          executed += 1;
+          continue;
+        }
         if (!(await isHandled(stateDir, { key: req.key, id: req.id }))) {
           await markHandled(stateDir, { key: req.key, id: req.id, status: 'started' });
           await executeTool({ stateDir, req, conn });
           await markHandled(stateDir, { key: req.key, id: req.id, status: 'done' });
+          handled.keys[key] = handled.keys[key] || {};
+          handled.keys[key][req.id] = { status: 'done' };
+          executed += 1;
+        } else {
+          break;
         }
       } catch (e) {
-        // Post parse errors as a hint but don't loop endlessly.
         const msg = `Agentify orchestrator error: ${e?.message || String(e)}`;
         await sendNoWait(conn, { key, text: msg, stopAfterSend: true }).catch(() => {});
         await appendLog(stateDir, key, `error: ${e?.message || String(e)}`);
+        await markHandled(stateDir, { key, id: String(next?.id || ''), status: 'error', meta: { message: e?.message || String(e) } }).catch(() => {});
+        break;
       }
     }
 

@@ -128,12 +128,14 @@ async function refresh() {
 
   // Orchestrator status.
   const running = Array.isArray(orch?.running) ? orch.running : [];
+  const recent = Array.isArray(orch?.recent) ? orch.recent : [];
   const statusLine =
     running.length === 0
       ? 'No orchestrators running.'
       : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
   el('orchStatus').textContent = statusLine;
   if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
+  else if (recent.length) el('orchWorkspaceHint').textContent = `Last exit: ${recent[0].key} code=${recent[0].exitCode ?? 'null'} signal=${recent[0].signal || 'null'}`;
   else el('orchWorkspaceHint').textContent = '';
 }
 
@@ -194,6 +196,15 @@ async function main() {
       await orchRefresh();
     } catch (e) {
       el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchStopAll').onclick = async () => {
+    try {
+      await window.agentifyDesktop.stopAllOrchestrators();
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop all failed: ${e?.message || String(e)}`;
     }
   };
 

@@ -128,6 +128,7 @@ async function main() {
   let controlWin = null;
   let quitting = false;
   const orchestrators = new Map(); // key -> { child, pid, startedAt }
+  const orchestratorHistory = new Map(); // key -> { pid, startedAt, exitedAt, exitCode, signal, logPath }
   const showControlCenter = async () => {
     if (controlWin && !controlWin.isDestroyed()) {
       if (controlWin.isMinimized()) controlWin.restore();
@@ -337,7 +338,13 @@ async function main() {
       if (!v?.child) continue;
       running.push({ key: k, pid: v.pid, startedAt: v.startedAt, logPath: orchestratorLogPath(stateDir, k) });
     }
-    return { ok: true, running };
+    const recent = [];
+    for (const [k, v] of orchestratorHistory.entries()) {
+      recent.push({ key: k, ...v });
+    }
+    // show most recent first
+    recent.sort((a, b) => String(b.exitedAt || '').localeCompare(String(a.exitedAt || '')));
+    return { ok: true, running, recent: recent.slice(0, 10) };
   });
 
   ipcMain.handle('agentify:setWorkspaceForKey', async (_evt, args) => {
@@ -373,9 +380,18 @@ async function main() {
       stdio: 'ignore',
       env: { ...process.env, AGENTIFY_DESKTOP_STATE_DIR: stateDir }
     });
-    orchestrators.set(key, { child, pid: child.pid, startedAt: new Date().toISOString() });
-    child.on('exit', () => {
+    const startedAt = new Date().toISOString();
+    orchestrators.set(key, { child, pid: child.pid, startedAt });
+    child.on('exit', (code, signal) => {
       orchestrators.delete(key);
+      orchestratorHistory.set(key, {
+        pid: child.pid,
+        startedAt,
+        exitedAt: new Date().toISOString(),
+        exitCode: typeof code === 'number' ? code : null,
+        signal: signal || null,
+        logPath: orchestratorLogPath(stateDir, key)
+      });
       try {
         if (controlWin && !controlWin.isDestroyed()) controlWin.webContents.send('agentify:tabsChanged');
       } catch {}
@@ -392,6 +408,16 @@ async function main() {
       cur.child.kill('SIGTERM');
     } catch {}
     orchestrators.delete(key);
+    return { ok: true };
+  });
+
+  ipcMain.handle('agentify:stopAllOrchestrators', async () => {
+    for (const [k, v] of orchestrators.entries()) {
+      try {
+        v?.child?.kill?.('SIGTERM');
+      } catch {}
+      orchestrators.delete(k);
+    }
     return { ok: true };
   });
 
