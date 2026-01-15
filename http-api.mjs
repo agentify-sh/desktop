@@ -264,6 +264,24 @@ export function startHttpApi({
         }
       }
 
+      if (url.pathname === '/send' && req.method === 'POST') {
+        const body = await parseBody(req, { maxBytes: 5_000_000 });
+        const timeoutMs = Number(body.timeoutMs || 0) || 3 * 60_000;
+        const text = String(body.text || '');
+        const stopAfterSend = !!body.stopAfterSend;
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        // Apply the same governor as /query since it still sends a message.
+        checkAndConsumeQueryBudget({ tabId, governor });
+        inflight.queries += 1;
+        const controller = tabs.getControllerById(tabId);
+        try {
+          const result = await controller.send({ text, timeoutMs, stopAfterSend });
+          return sendJson(res, 200, { ok: true, tabId, result });
+        } finally {
+          inflight.queries = Math.max(0, inflight.queries - 1);
+        }
+      }
+
       if (url.pathname === '/read-page' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxChars = Number(body.maxChars || 0) || 200_000;
