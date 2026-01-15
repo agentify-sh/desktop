@@ -45,6 +45,10 @@ export class ChatGPTController {
     this.mouse = { x: 30, y: 30 };
   }
 
+  async runExclusive(fn) {
+    return await this.mutex.run(fn);
+  }
+
   async navigate(url) {
     await this.loadURL(url);
   }
@@ -395,13 +399,38 @@ export class ChatGPTController {
     if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('missing_prompt');
     if (prompt.length > 200_000) throw new Error('prompt_too_large');
 
+    await this.ensureReady({ timeoutMs });
+    await this.#attachFiles(attachments);
+    await this.#typePrompt(prompt);
+    await this.#clickSend();
+    return await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
+  }
+
+  async send({ text, timeoutMs = 3 * 60_000, stopAfterSend = false } = {}) {
+    const prompt = String(text || '');
+    if (!prompt.trim()) throw new Error('missing_prompt');
+    if (prompt.length > 200_000) throw new Error('prompt_too_large');
+
     return await this.mutex.run(async () => {
       await this.ensureReady({ timeoutMs });
-      await this.#attachFiles(attachments);
       await this.#typePrompt(prompt);
       await this.#clickSend();
-      const result = await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
-      return result;
+
+      if (stopAfterSend) {
+        const stopSel = JSON.stringify(this.selectors.stopButton);
+        const start = Date.now();
+        while (Date.now() - start < 2500) {
+          const clicked = await this.#eval(`(() => {
+            const stop = document.querySelector(${stopSel});
+            if (!stop) return false;
+            try { stop.click(); return true; } catch { return false; }
+          })()`);
+          if (clicked) break;
+          await sleep(120);
+        }
+      }
+
+      return { ok: true };
     });
   }
 

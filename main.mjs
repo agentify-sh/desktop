@@ -4,11 +4,14 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 import { ChatGPTController } from './chatgpt-controller.mjs';
 import { startHttpApi } from './http-api.mjs';
 import { TabManager } from './tab-manager.mjs';
 import { defaultStateDir, ensureToken, readSettings, writeSettings, defaultSettings, writeState } from './state.mjs';
+import { getWorkspace, setWorkspace } from './orchestrator/storage.mjs';
+import { logPath as orchestratorLogPath } from './orchestrator/logging.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,6 +127,8 @@ async function main() {
 
   let controlWin = null;
   let quitting = false;
+  const orchestrators = new Map(); // key -> { child, pid, startedAt }
+  const orchestratorHistory = new Map(); // key -> { pid, startedAt, exitedAt, exitCode, signal, logPath }
   const showControlCenter = async () => {
     if (controlWin && !controlWin.isDestroyed()) {
       if (controlWin.isMinimized()) controlWin.restore();
@@ -327,6 +332,95 @@ async function main() {
     return { ok: true };
   });
 
+  ipcMain.handle('agentify:getOrchestrators', async () => {
+    const running = [];
+    for (const [k, v] of orchestrators.entries()) {
+      if (!v?.child) continue;
+      running.push({ key: k, pid: v.pid, startedAt: v.startedAt, logPath: orchestratorLogPath(stateDir, k) });
+    }
+    const recent = [];
+    for (const [k, v] of orchestratorHistory.entries()) {
+      recent.push({ key: k, ...v });
+    }
+    // show most recent first
+    recent.sort((a, b) => String(b.exitedAt || '').localeCompare(String(a.exitedAt || '')));
+    return { ok: true, running, recent: recent.slice(0, 10) };
+  });
+
+  ipcMain.handle('agentify:setWorkspaceForKey', async (_evt, args) => {
+    const key = String(args?.key || '').trim();
+    const workspace = String(args?.workspace || '').trim();
+    if (!key) throw new Error('missing_key');
+    if (!workspace) throw new Error('missing_workspace');
+    const resolved = path.resolve(workspace);
+    const st = await fs.stat(resolved);
+    if (!st.isDirectory()) throw new Error('workspace_not_directory');
+    if (resolved === path.parse(resolved).root) throw new Error('workspace_cannot_be_filesystem_root');
+    await setWorkspace(stateDir, { key, workspace: { root: resolved, allowRoots: [resolved] } });
+    return { ok: true };
+  });
+
+  ipcMain.handle('agentify:getWorkspaceForKey', async (_evt, args) => {
+    const key = String(args?.key || '').trim();
+    if (!key) throw new Error('missing_key');
+    const ws = await getWorkspace(stateDir, { key });
+    return { ok: true, workspace: ws };
+  });
+
+  ipcMain.handle('agentify:startOrchestrator', async (_evt, args) => {
+    const key = String(args?.key || '').trim();
+    if (!key) throw new Error('missing_key');
+    if (orchestrators.has(key)) return { ok: true, alreadyRunning: true };
+
+    const ws = await getWorkspace(stateDir, { key });
+    const cwd = path.resolve(ws?.root || process.cwd());
+    const entry = path.join(__dirname, 'orchestrator.mjs');
+    const child = spawn(process.execPath, [entry, '--state-dir', stateDir, '--key', key], {
+      cwd,
+      stdio: 'ignore',
+      env: { ...process.env, AGENTIFY_DESKTOP_STATE_DIR: stateDir }
+    });
+    const startedAt = new Date().toISOString();
+    orchestrators.set(key, { child, pid: child.pid, startedAt });
+    child.on('exit', (code, signal) => {
+      orchestrators.delete(key);
+      orchestratorHistory.set(key, {
+        pid: child.pid,
+        startedAt,
+        exitedAt: new Date().toISOString(),
+        exitCode: typeof code === 'number' ? code : null,
+        signal: signal || null,
+        logPath: orchestratorLogPath(stateDir, key)
+      });
+      try {
+        if (controlWin && !controlWin.isDestroyed()) controlWin.webContents.send('agentify:tabsChanged');
+      } catch {}
+    });
+    return { ok: true, pid: child.pid };
+  });
+
+  ipcMain.handle('agentify:stopOrchestrator', async (_evt, args) => {
+    const key = String(args?.key || '').trim();
+    if (!key) throw new Error('missing_key');
+    const cur = orchestrators.get(key);
+    if (!cur?.child) return { ok: true, notRunning: true };
+    try {
+      cur.child.kill('SIGTERM');
+    } catch {}
+    orchestrators.delete(key);
+    return { ok: true };
+  });
+
+  ipcMain.handle('agentify:stopAllOrchestrators', async () => {
+    for (const [k, v] of orchestrators.entries()) {
+      try {
+        v?.child?.kill?.('SIGTERM');
+      } catch {}
+      orchestrators.delete(k);
+    }
+    return { ok: true };
+  });
+
   let server = null;
   let port = basePort;
   const tries = port === 0 ? 1 : 20;
@@ -390,6 +484,11 @@ async function main() {
 
   app.on('before-quit', () => {
     quitting = true;
+    for (const v of orchestrators.values()) {
+      try {
+        v?.child?.kill?.('SIGTERM');
+      } catch {}
+    }
     tabs.setQuitting(true);
   });
 
@@ -400,17 +499,12 @@ async function main() {
     app.quit();
   });
 
-  app.on('activate', () => {
-    showControlCenter().catch(() => {});
-  });
-
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    app.quit();
   });
 }
 
 main().catch((e) => {
-  // eslint-disable-next-line no-console
-  console.error('[agentify-desktop] fatal', e);
+  console.error('agentify-desktop fatal:', e);
   process.exit(1);
 });
