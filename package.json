@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "mcp": "node mcp-server.mjs",
+    "orchestrator": "node orchestrator.mjs",
     "test": "node --test tests/*.test.mjs",
     "dist": "electron-builder"
   },
@@ -48,4 +49,3 @@
     }
   }
 }
-

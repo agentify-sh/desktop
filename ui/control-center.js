@@ -28,9 +28,20 @@ function setChecked(id, value) {
   el(id).checked = !!value;
 }
 
+function uuidv4() {
+  // RFC4122 v4, from crypto.getRandomValues (browser-safe).
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function refresh() {
   const state = await window.agentifyDesktop.getState();
   const settings = await window.agentifyDesktop.getSettings();
+  const orch = await window.agentifyDesktop.getOrchestrators();
 
   const vendorSelect = el('vendorSelect');
   vendorSelect.innerHTML = '';
@@ -114,6 +125,18 @@ async function refresh() {
   setChecked('setAcknowledge', false);
   el('btnSaveSettings').disabled = true;
   el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
+
+  // Orchestrator status.
+  const running = Array.isArray(orch?.running) ? orch.running : [];
+  const recent = Array.isArray(orch?.recent) ? orch.recent : [];
+  const statusLine =
+    running.length === 0
+      ? 'No orchestrators running.'
+      : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
+  el('orchStatus').textContent = statusLine;
+  if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
+  else if (recent.length) el('orchWorkspaceHint').textContent = `Last exit: ${recent[0].key} code=${recent[0].exitCode ?? 'null'} signal=${recent[0].signal || 'null'}`;
+  else el('orchWorkspaceHint').textContent = '';
 }
 
 async function main() {
@@ -141,6 +164,87 @@ async function main() {
     }
   };
 
+  const orchRefresh = async () => {
+    await refresh();
+  };
+  el('btnOrchRefresh').onclick = () => orchRefresh().catch(() => {});
+
+  el('btnOrchStart').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    const workspace = String(el('orchWorkspace').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      if (workspace) await window.agentifyDesktop.setWorkspaceForKey({ key, workspace });
+      await window.agentifyDesktop.startOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Start failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchStop').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      await window.agentifyDesktop.stopOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchStopAll').onclick = async () => {
+    try {
+      await window.agentifyDesktop.stopAllOrchestrators();
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop all failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchCopy').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key first.';
+      return;
+    }
+    const tool = String(el('orchTool').value || 'codex.run').trim();
+    const obj =
+      tool === 'codex.run'
+        ? { agentify_tool: tool, id: uuidv4(), key, mode: 'interactive', args: { prompt: 'Describe the task for Codex here.' } }
+        : tool === 'fs.read'
+          ? { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: { path: 'relative/path/to/file.txt', maxBytes: 50000 } }
+          : { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: {} };
+    const text = `\`\`\`json\n${JSON.stringify(obj, null, 2)}\n\`\`\``;
+    try {
+      await navigator.clipboard.writeText(text);
+      el('orchStatus').textContent = 'Copied tool JSON to clipboard. Paste it into the ChatGPT thread.';
+    } catch {
+      el('orchStatus').textContent = 'Copy failed. Your browser may block clipboard access; select and copy manually: ' + text;
+    }
+  };
+
+  el('orchKey').onchange = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) return;
+    try {
+      const ws = await window.agentifyDesktop.getWorkspaceForKey({ key });
+      const root = ws?.workspace?.root || '';
+      if (root) {
+        el('orchWorkspace').value = root;
+        el('orchWorkspaceHint').textContent = `Saved workspace: ${root}`;
+      } else {
+        el('orchWorkspaceHint').textContent = 'No saved workspace for this key yet.';
+      }
+    } catch {}
+  };
+
   const updateSaveEnabled = () => {
     el('btnSaveSettings').disabled = !el('setAcknowledge').checked;
   };
@@ -158,31 +262,30 @@ async function main() {
   };
 
   el('btnSaveSettings').onclick = async () => {
+    if (!el('setAcknowledge').checked) return;
     el('settingsHint').textContent = '';
     try {
-      const payload = {
+      await window.agentifyDesktop.setSettings({
         maxInflightQueries: num('setMaxInflight', 2),
         maxQueriesPerMinute: num('setQpm', 12),
-        minTabGapMs: num('setTabGap', 1200),
-        minGlobalGapMs: num('setGlobalGap', 200),
+        minTabGapMs: num('setTabGap', 0),
+        minGlobalGapMs: num('setGlobalGap', 0),
         showTabsByDefault: !!el('setShowTabsDefault').checked,
-        acknowledge: !!el('setAcknowledge').checked
-      };
-      const out = await window.agentifyDesktop.setSettings(payload);
-      el('settingsHint').textContent = `Saved. Acknowledged: ${out.acknowledgedAt || 'no'}`;
+        acknowledge: true
+      });
+      el('settingsHint').textContent = 'Saved.';
       await refresh();
     } catch (e) {
       el('settingsHint').textContent = `Save failed: ${e?.message || String(e)}`;
     }
   };
 
-  window.agentifyDesktop.onTabsChanged(() => {
-    refresh().catch(() => {});
-  });
-
+  window.agentifyDesktop.onTabsChanged(() => refresh().catch(() => {}));
   await refresh();
 }
 
 main().catch((e) => {
-  el('statusLine').textContent = `Error: ${e?.message || String(e)}`;
+  const st = el('statusLine');
+  st.textContent = `Control Center error: ${e?.message || String(e)}`;
 });
+

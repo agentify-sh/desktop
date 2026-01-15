@@ -46,6 +46,8 @@ function mapErrorToHttp(error) {
   const msg = String(error?.message || '');
   if (msg === 'body_too_large') return { code: 413, body: { error: 'body_too_large' } };
   if (msg === 'missing_url') return { code: 400, body: { error: 'missing_url' } };
+  if (msg === 'missing_prompt') return { code: 400, body: { error: 'missing_prompt' } };
+  if (msg === 'prompt_too_large') return { code: 400, body: { error: 'prompt_too_large' } };
   if (msg === 'missing_tabId') return { code: 400, body: { error: 'missing_tabId' } };
   if (msg === 'missing_key') return { code: 400, body: { error: 'missing_key' } };
   if (msg === 'tab_not_found') return { code: 404, body: { error: 'tab_not_found' } };
@@ -66,12 +68,24 @@ function envShowTabsDefault() {
   return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
-async function resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault = false }) {
+async function runExclusive(controller, fn) {
+  if (controller && typeof controller.runExclusive === 'function') return await controller.runExclusive(fn);
+  return await fn();
+}
+
+async function resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault = false, createIfMissing = true }) {
   const tabId = (body?.tabId ? String(body.tabId).trim() : '') || getTabIdFromUrl(url) || null;
   const key = (body?.key ? String(body.key).trim() : '') || null;
   const name = (body?.name ? String(body.name).trim() : '') || null;
   if (tabId) return tabId;
-  if (key) return await tabs.ensureTab({ key, name, show: envShowTabsDefault() || showTabsByDefault });
+  if (key) {
+    if (!createIfMissing) {
+      const existing = (tabs.listTabs?.() || []).find((t) => t?.key === key);
+      if (existing?.id) return existing.id;
+      throw new Error('tab_not_found');
+    }
+    return await tabs.ensureTab({ key, name, show: envShowTabsDefault() || showTabsByDefault });
+  }
   return defaultTabId;
 }
 
@@ -177,13 +191,13 @@ export function startHttpApi({
 
       if (url.pathname === '/show' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         await onShow?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
       if (url.pathname === '/hide' && req.method === 'POST') {
         const body = await parseBody(req);
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: false });
         await onHide?.({ tabId });
         return sendJson(res, 200, { ok: true });
       }
@@ -232,18 +246,18 @@ export function startHttpApi({
         const body = await parseBody(req);
         const to = String(body.url || '').trim();
         if (!to) return sendJson(res, 400, { error: 'missing_url' });
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         const controller = tabs.getControllerById(tabId);
-        await controller.navigate(to);
+        await runExclusive(controller, async () => controller.navigate(to));
         return sendJson(res, 200, { ok: true, tabId, url: await controller.getUrl() });
       }
 
       if (url.pathname === '/ensure-ready' && req.method === 'POST') {
         const body = await parseBody(req);
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         const controller = tabs.getControllerById(tabId);
-        const st = await controller.ensureReady({ timeoutMs });
+        const st = await runExclusive(controller, async () => controller.ensureReady({ timeoutMs }));
         return sendJson(res, 200, { ok: true, tabId, state: st });
       }
 
@@ -252,12 +266,29 @@ export function startHttpApi({
         const timeoutMs = Number(body.timeoutMs || 0) || 10 * 60_000;
         const prompt = String(body.prompt || '');
         const attachments = Array.isArray(body.attachments) ? body.attachments.map(String) : [];
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         checkAndConsumeQueryBudget({ tabId, governor });
         inflight.queries += 1;
         const controller = tabs.getControllerById(tabId);
         try {
-          const result = await controller.query({ prompt, attachments, timeoutMs });
+          const result = await runExclusive(controller, async () => controller.query({ prompt, attachments, timeoutMs }));
+          return sendJson(res, 200, { ok: true, tabId, result });
+        } finally {
+          inflight.queries = Math.max(0, inflight.queries - 1);
+        }
+      }
+
+      if (url.pathname === '/send' && req.method === 'POST') {
+        const body = await parseBody(req, { maxBytes: 5_000_000 });
+        const timeoutMs = Number(body.timeoutMs || 0) || 3 * 60_000;
+        const text = String(body.text || '');
+        const stopAfterSend = !!body.stopAfterSend;
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
+        checkAndConsumeQueryBudget({ tabId, governor });
+        inflight.queries += 1;
+        const controller = tabs.getControllerById(tabId);
+        try {
+          const result = await runExclusive(controller, async () => controller.send({ text, timeoutMs, stopAfterSend }));
           return sendJson(res, 200, { ok: true, tabId, result });
         } finally {
           inflight.queries = Math.max(0, inflight.queries - 1);
@@ -267,18 +298,18 @@ export function startHttpApi({
       if (url.pathname === '/read-page' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxChars = Number(body.maxChars || 0) || 200_000;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         const controller = tabs.getControllerById(tabId);
-        const text = await controller.readPageText({ maxChars });
+        const text = await runExclusive(controller, async () => controller.readPageText({ maxChars }));
         return sendJson(res, 200, { ok: true, tabId, text });
       }
 
       if (url.pathname === '/download-images' && req.method === 'POST') {
         const body = await parseBody(req);
         const maxImages = Number(body.maxImages || 0) || 6;
-        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault });
+        const tabId = await resolveTab({ tabs, defaultTabId, body, url, showTabsByDefault: governor.showTabsByDefault, createIfMissing: true });
         const controller = tabs.getControllerById(tabId);
-        const files = await controller.downloadLastAssistantImages({ maxImages });
+        const files = await runExclusive(controller, async () => controller.downloadLastAssistantImages({ maxImages }));
         return sendJson(res, 200, { ok: true, tabId, files });
       }
 

@@ -105,17 +105,19 @@ registerTool(
   },
   async ({ tabId, key, timeoutMs }) => {
     const conn = await getConn();
-    const data = await requestJson({ ...conn, method: 'POST', path: '/ensure-ready', body: { tabId, key, timeoutMs: timeoutMs || 10 * 60_000 } });
+    const data = await requestJson({
+      ...conn,
+      method: 'POST',
+      path: '/ensure-ready',
+      body: { tabId, key, timeoutMs: timeoutMs || 10 * 60_000 }
+    });
     return { content: [{ type: 'text', text: JSON.stringify(data.state || {}, null, 2) }], structuredContent: data };
   }
 );
 
 registerTool(
   'agentify_show',
-  {
-    description: 'Bring the Agentify Desktop window to the front.',
-    inputSchema: { tabId: z.string().optional(), key: z.string().optional() }
-  },
+  { description: 'Bring the Agentify Desktop window to the front.', inputSchema: { tabId: z.string().optional(), key: z.string().optional() } },
   async ({ tabId, key }) => {
     const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/show', body: { tabId, key } });
@@ -135,10 +137,7 @@ registerTool(
 
 registerTool(
   'agentify_status',
-  {
-    description: 'Get current URL and blocked/ready status for the Agentify Desktop window.',
-    inputSchema: { tabId: z.string().optional().describe('Tab/session id to query.') }
-  },
+  { description: 'Get current URL and blocked/ready status for the Agentify Desktop window.', inputSchema: { tabId: z.string().optional() } },
   async ({ tabId }) => {
     const conn = await getConn();
     const path = tabId ? `/status?tabId=${encodeURIComponent(tabId)}` : '/status';
@@ -168,7 +167,12 @@ registerTool(
       path: '/query',
       body: { tabId, key, prompt, attachments: [], timeoutMs: timeoutMs || 10 * 60_000 }
     });
-    const d = await requestJson({ ...conn, method: 'POST', path: '/download-images', body: { tabId: q.tabId || tabId, maxImages: maxImages || 6 } });
+    const d = await requestJson({
+      ...conn,
+      method: 'POST',
+      path: '/download-images',
+      body: { tabId: q.tabId || tabId, maxImages: maxImages || 6 }
+    });
     const structuredContent = { text: q.result?.text || '', files: d.files || [] };
     return {
       content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
@@ -192,16 +196,16 @@ registerTool(
     const conn = await getConn();
     const d = await requestJson({ ...conn, method: 'POST', path: '/download-images', body: { tabId, key, maxImages: maxImages || 6 } });
     const structuredContent = { files: d.files || [] };
-    return { content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }], structuredContent };
+    return {
+      content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
+      structuredContent: { tabId: d.tabId || tabId || null, ...structuredContent }
+    };
   }
 );
 
 registerTool(
   'agentify_tabs',
-  {
-    description: 'List current tabs/sessions (for parallel jobs).',
-    inputSchema: {}
-  },
+  { description: 'List current tabs/sessions (for parallel jobs).', inputSchema: {} },
   async () => {
     const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'GET', path: '/tabs' });
@@ -217,17 +221,19 @@ registerTool(
   },
   async ({ key, name, show }) => {
     const conn = await getConn();
-    const data = await requestJson({ ...conn, method: 'POST', path: '/tabs/create', body: { key, name, show: typeof show === 'boolean' ? show : undefined } });
+    const data = await requestJson({
+      ...conn,
+      method: 'POST',
+      path: '/tabs/create',
+      body: { key, name, show: typeof show === 'boolean' ? show : undefined }
+    });
     return { content: [{ type: 'text', text: data.tabId || '' }], structuredContent: data };
   }
 );
 
 registerTool(
   'agentify_tab_close',
-  {
-    description: 'Close a tab/session by tabId.',
-    inputSchema: { tabId: z.string().describe('Tab id to close.') }
-  },
+  { description: 'Close a tab/session by tabId.', inputSchema: { tabId: z.string().describe('Tab id to close.') } },
   async ({ tabId }) => {
     const conn = await getConn();
     const data = await requestJson({ ...conn, method: 'POST', path: '/tabs/close', body: { tabId } });
@@ -235,25 +241,15 @@ registerTool(
   }
 );
 
-registerTool(
-  'agentify_shutdown',
-  {
-    description: 'Gracefully shut down the Agentify Desktop app.',
-    inputSchema: {}
-  },
-  async () => {
-    const conn = await getConn();
-    await requestJson({ ...conn, method: 'POST', path: '/shutdown', body: { scope: 'app' } });
-    return { content: [{ type: 'text', text: 'ok' }] };
-  }
-);
+registerTool('agentify_shutdown', { description: 'Gracefully shut down the Agentify Desktop app.', inputSchema: {} }, async () => {
+  const conn = await getConn();
+  await requestJson({ ...conn, method: 'POST', path: '/shutdown', body: { scope: 'app' } });
+  return { content: [{ type: 'text', text: 'ok' }] };
+});
 
 registerTool(
   'agentify_rotate_token',
-  {
-    description: 'Rotate the local HTTP API bearer token (requires reconnect on subsequent calls).',
-    inputSchema: {}
-  },
+  { description: 'Rotate the local HTTP API bearer token (requires reconnect on subsequent calls).', inputSchema: {} },
   async () => {
     const conn = await getConn();
     await requestJson({ ...conn, method: 'POST', path: '/rotate-token' });
