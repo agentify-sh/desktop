@@ -1,13 +1,23 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('agentify', {
-  tabsList: async () => await ipcRenderer.invoke('agentify:tabs:list'),
-  tabCreate: async ({ key, name, show } = {}) => await ipcRenderer.invoke('agentify:tabs:create', { key, name, show }),
-  tabClose: async (tabId) => await ipcRenderer.invoke('agentify:tabs:close', { tabId }),
-  tabShow: async (tabId) => await ipcRenderer.invoke('agentify:tabs:show', { tabId }),
-  tabHide: async (tabId) => await ipcRenderer.invoke('agentify:tabs:hide', { tabId }),
-  configGet: async () => await ipcRenderer.invoke('agentify:config:get'),
-  configSet: async (cfg) => await ipcRenderer.invoke('agentify:config:set', cfg),
-  openStateDir: async () => await ipcRenderer.invoke('agentify:state:open')
+contextBridge.exposeInMainWorld('agentifyDesktop', {
+  getState: () => ipcRenderer.invoke('agentify:getState'),
+  getSettings: () => ipcRenderer.invoke('agentify:getSettings'),
+  setSettings: (args) => ipcRenderer.invoke('agentify:setSettings', args || {}),
+  getOrchestrators: () => ipcRenderer.invoke('agentify:getOrchestrators'),
+  startOrchestrator: (args) => ipcRenderer.invoke('agentify:startOrchestrator', args || {}),
+  stopOrchestrator: (args) => ipcRenderer.invoke('agentify:stopOrchestrator', args || {}),
+  stopAllOrchestrators: () => ipcRenderer.invoke('agentify:stopAllOrchestrators'),
+  setWorkspaceForKey: (args) => ipcRenderer.invoke('agentify:setWorkspaceForKey', args || {}),
+  getWorkspaceForKey: (args) => ipcRenderer.invoke('agentify:getWorkspaceForKey', args || {}),
+  createTab: (args) => ipcRenderer.invoke('agentify:createTab', args || {}),
+  showTab: (args) => ipcRenderer.invoke('agentify:showTab', args || {}),
+  hideTab: (args) => ipcRenderer.invoke('agentify:hideTab', args || {}),
+  closeTab: (args) => ipcRenderer.invoke('agentify:closeTab', args || {}),
+  openStateDir: () => ipcRenderer.invoke('agentify:openStateDir'),
+  onTabsChanged: (cb) => {
+    if (typeof cb !== 'function') return;
+    ipcRenderer.on('agentify:tabsChanged', () => cb());
+  }
 });
 

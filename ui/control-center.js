@@ -1,121 +1,291 @@
-async function refresh() {
-  const tabs = await window.agentify.tabsList();
-  const cfg = await window.agentify.configGet();
-  renderTabs(tabs);
-  renderCfg(cfg);
-}
+/* global window */
 
 function el(id) {
-  const node = document.getElementById(id);
-  if (!node) throw new Error(`missing_element:${id}`);
-  return node;
+  const n = document.getElementById(id);
+  if (!n) throw new Error(`missing_element:${id}`);
+  return n;
 }
 
-function renderTabs(data) {
-  const body = el('tabsBody');
-  body.innerHTML = '';
-  const rows = Array.isArray(data?.tabs) ? data.tabs : [];
-  for (const t of rows) {
-    const tr = document.createElement('tr');
-    const tdKey = document.createElement('td');
-    tdKey.textContent = t.key || '';
-    const tdName = document.createElement('td');
-    tdName.textContent = t.name || '';
-    const tdId = document.createElement('td');
-    tdId.className = 'mono';
-    tdId.textContent = t.id || '';
-    const tdActions = document.createElement('td');
-    const btnShow = document.createElement('button');
-    btnShow.textContent = 'Show';
-    btnShow.onclick = async () => {
-      await window.agentify.tabShow(t.id);
-      await refresh();
-    };
-    const btnHide = document.createElement('button');
-    btnHide.textContent = 'Hide';
-    btnHide.onclick = async () => {
-      await window.agentify.tabHide(t.id);
-      await refresh();
-    };
-    const btnClose = document.createElement('button');
-    btnClose.textContent = 'Close';
-    btnClose.className = 'danger';
-    btnClose.onclick = async () => {
-      await window.agentify.tabClose(t.id);
-      await refresh();
-    };
-    tdActions.appendChild(btnShow);
-    tdActions.appendChild(document.createTextNode(' '));
-    tdActions.appendChild(btnHide);
-    tdActions.appendChild(document.createTextNode(' '));
-    tdActions.appendChild(btnClose);
-
-    tr.appendChild(tdKey);
-    tr.appendChild(tdName);
-    tr.appendChild(tdId);
-    tr.appendChild(tdActions);
-    body.appendChild(tr);
+function fmtTime(ms) {
+  try {
+    const d = new Date(ms);
+    return d.toLocaleString();
+  } catch {
+    return '';
   }
 }
 
-function renderCfg(cfg) {
-  el('cfgShowTabs').checked = !!cfg.showTabsByDefault;
-  el('cfgMaxTabs').value = String(cfg.maxTabs ?? '');
-  el('cfgMaxParallelQueries').value = String(cfg.maxParallelQueries ?? '');
-  el('cfgMinQueryGapMs').value = String(cfg.minQueryGapMs ?? '');
-  el('cfgMinQueryGapMsGlobal').value = String(cfg.minQueryGapMsGlobal ?? '');
-  el('cfgQueryGapMaxWaitMs').value = String(cfg.queryGapMaxWaitMs ?? '');
+function num(id, fallback) {
+  const v = Number(el(id).value);
+  return Number.isFinite(v) ? v : fallback;
 }
 
-function readCfgFromForm() {
-  return {
-    showTabsByDefault: el('cfgShowTabs').checked,
-    maxTabs: Number(el('cfgMaxTabs').value),
-    maxParallelQueries: Number(el('cfgMaxParallelQueries').value),
-    minQueryGapMs: Number(el('cfgMinQueryGapMs').value),
-    minQueryGapMsGlobal: Number(el('cfgMinQueryGapMsGlobal').value),
-    queryGapMaxWaitMs: Number(el('cfgQueryGapMaxWaitMs').value)
-  };
+function setNum(id, value) {
+  el(id).value = String(Number(value));
+}
+
+function setChecked(id, value) {
+  el(id).checked = !!value;
+}
+
+function uuidv4() {
+  // RFC4122 v4, from crypto.getRandomValues (browser-safe).
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function refresh() {
+  const state = await window.agentifyDesktop.getState();
+  const settings = await window.agentifyDesktop.getSettings();
+  const orch = await window.agentifyDesktop.getOrchestrators();
+
+  const vendorSelect = el('vendorSelect');
+  vendorSelect.innerHTML = '';
+  for (const v of state.vendors || []) {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = `${v.name}${v.status && v.status !== 'supported' ? ` (${v.status})` : ''}`;
+    if (v.id === 'chatgpt') opt.selected = true;
+    vendorSelect.appendChild(opt);
+  }
+
+  const tabs = Array.isArray(state.tabs) ? state.tabs : [];
+  const list = el('tabsList');
+  const empty = el('tabsEmpty');
+  list.innerHTML = '';
+  empty.style.display = tabs.length ? 'none' : 'block';
+
+  for (const t of tabs) {
+    const row = document.createElement('div');
+    row.className = 'tab';
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = t.name || t.key || t.id;
+
+    const sub = document.createElement('div');
+    sub.className = 'sub';
+    const vendorLabel = t.vendorName ? `${t.vendorName}` : 'Unknown vendor';
+    const keyLabel = t.key ? `key=${t.key}` : 'no key';
+    const used = t.lastUsedAt ? fmtTime(t.lastUsedAt) : '';
+    sub.textContent = `${vendorLabel} • ${keyLabel}${used ? ` • used ${used}` : ''}`;
+
+    meta.appendChild(title);
+    meta.appendChild(sub);
+
+    const controls = document.createElement('div');
+    controls.className = 'controls';
+
+    const btnShow = document.createElement('button');
+    btnShow.className = 'btn secondary';
+    btnShow.textContent = 'Show';
+    btnShow.onclick = async () => {
+      await window.agentifyDesktop.showTab({ tabId: t.id });
+    };
+
+    const btnHide = document.createElement('button');
+    btnHide.className = 'btn secondary';
+    btnHide.textContent = 'Hide';
+    btnHide.onclick = async () => {
+      await window.agentifyDesktop.hideTab({ tabId: t.id });
+    };
+
+    const btnClose = document.createElement('button');
+    btnClose.className = 'btn secondary';
+    btnClose.textContent = 'Close';
+    btnClose.onclick = async () => {
+      if (t.protectedTab) return;
+      await window.agentifyDesktop.closeTab({ tabId: t.id });
+    };
+
+    if (t.protectedTab) btnClose.disabled = true;
+    controls.appendChild(btnShow);
+    controls.appendChild(btnHide);
+    controls.appendChild(btnClose);
+
+    row.appendChild(meta);
+    row.appendChild(controls);
+    list.appendChild(row);
+  }
+
+  el('statusLine').textContent = `Tabs: ${tabs.length} • State: ${state.stateDir || ''}`;
+
+  // Settings UI.
+  setNum('setMaxInflight', settings.maxInflightQueries);
+  setNum('setQpm', settings.maxQueriesPerMinute);
+  setNum('setTabGap', settings.minTabGapMs);
+  setNum('setGlobalGap', settings.minGlobalGapMs);
+  setChecked('setShowTabsDefault', settings.showTabsByDefault);
+  setChecked('setAcknowledge', false);
+  el('btnSaveSettings').disabled = true;
+  el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
+
+  // Orchestrator status.
+  const running = Array.isArray(orch?.running) ? orch.running : [];
+  const recent = Array.isArray(orch?.recent) ? orch.recent : [];
+  const statusLine =
+    running.length === 0
+      ? 'No orchestrators running.'
+      : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
+  el('orchStatus').textContent = statusLine;
+  if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
+  else if (recent.length) el('orchWorkspaceHint').textContent = `Last exit: ${recent[0].key} code=${recent[0].exitCode ?? 'null'} signal=${recent[0].signal || 'null'}`;
+  else el('orchWorkspaceHint').textContent = '';
 }
 
 async function main() {
   el('btnRefresh').onclick = refresh;
-  el('btnCreate').onclick = async () => {
-    const key = el('newKey').value.trim();
-    const name = el('newName').value.trim() || null;
-    const show = el('newShow').checked;
-    if (!key) return;
-    await window.agentify.tabCreate({ key, name, show });
-    await refresh();
+  el('btnOpenState').onclick = async () => {
+    await window.agentifyDesktop.openStateDir();
+  };
+  el('btnShowDefault').onclick = async () => {
+    const st = await window.agentifyDesktop.getState();
+    if (st.defaultTabId) await window.agentifyDesktop.showTab({ tabId: st.defaultTabId });
   };
 
-  el('btnSaveCfg').onclick = async () => {
-    const msg = el('cfgMsg');
-    msg.textContent = '';
+  el('btnCreate').onclick = async () => {
+    const vendorId = String(el('vendorSelect').value || '').trim();
+    const key = String(el('tabKey').value || '').trim() || null;
+    const name = String(el('tabName').value || '').trim() || null;
+    const show = !!el('tabShow').checked;
+    el('createHint').textContent = '';
     try {
-      const next = readCfgFromForm();
-      const saved = await window.agentify.configSet(next);
-      msg.textContent = 'Saved. Some settings require restart to apply.';
-      renderCfg(saved);
+      const out = await window.agentifyDesktop.createTab({ vendorId, key, name, show });
+      el('createHint').textContent = `Created tab ${out.tabId || ''}`;
+      await refresh();
     } catch (e) {
-      msg.textContent = `Save failed: ${e?.message || String(e)}`;
+      el('createHint').textContent = `Create failed: ${e?.message || String(e)}`;
     }
   };
-  el('btnOpenState').onclick = async () => {
-    await window.agentify.openStateDir();
+
+  const orchRefresh = async () => {
+    await refresh();
   };
-  el('btnRestartHint').onclick = async () => {
-    const msg = el('cfgMsg');
-    msg.textContent = 'To apply maxTabs/showTabs defaults, restart the desktop app (or use agentify_shutdown then run start again).';
+  el('btnOrchRefresh').onclick = () => orchRefresh().catch(() => {});
+
+  el('btnOrchStart').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    const workspace = String(el('orchWorkspace').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      if (workspace) await window.agentifyDesktop.setWorkspaceForKey({ key, workspace });
+      await window.agentifyDesktop.startOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Start failed: ${e?.message || String(e)}`;
+    }
   };
 
+  el('btnOrchStop').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key.';
+      return;
+    }
+    try {
+      await window.agentifyDesktop.stopOrchestrator({ key });
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchStopAll').onclick = async () => {
+    try {
+      await window.agentifyDesktop.stopAllOrchestrators();
+      await orchRefresh();
+    } catch (e) {
+      el('orchStatus').textContent = `Stop all failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchCopy').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key first.';
+      return;
+    }
+    const tool = String(el('orchTool').value || 'codex.run').trim();
+    const obj =
+      tool === 'codex.run'
+        ? { agentify_tool: tool, id: uuidv4(), key, mode: 'interactive', args: { prompt: 'Describe the task for Codex here.' } }
+        : tool === 'fs.read'
+          ? { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: { path: 'relative/path/to/file.txt', maxBytes: 50000 } }
+          : { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: {} };
+    const text = `\`\`\`json\n${JSON.stringify(obj, null, 2)}\n\`\`\``;
+    try {
+      await navigator.clipboard.writeText(text);
+      el('orchStatus').textContent = 'Copied tool JSON to clipboard. Paste it into the ChatGPT thread.';
+    } catch {
+      el('orchStatus').textContent = 'Copy failed. Your browser may block clipboard access; select and copy manually: ' + text;
+    }
+  };
+
+  el('orchKey').onchange = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) return;
+    try {
+      const ws = await window.agentifyDesktop.getWorkspaceForKey({ key });
+      const root = ws?.workspace?.root || '';
+      if (root) {
+        el('orchWorkspace').value = root;
+        el('orchWorkspaceHint').textContent = `Saved workspace: ${root}`;
+      } else {
+        el('orchWorkspaceHint').textContent = 'No saved workspace for this key yet.';
+      }
+    } catch {}
+  };
+
+  const updateSaveEnabled = () => {
+    el('btnSaveSettings').disabled = !el('setAcknowledge').checked;
+  };
+  el('setAcknowledge').onchange = updateSaveEnabled;
+
+  el('btnResetSettings').onclick = async () => {
+    el('settingsHint').textContent = '';
+    try {
+      await window.agentifyDesktop.setSettings({ reset: true });
+      el('settingsHint').textContent = 'Reset to defaults.';
+      await refresh();
+    } catch (e) {
+      el('settingsHint').textContent = `Reset failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnSaveSettings').onclick = async () => {
+    if (!el('setAcknowledge').checked) return;
+    el('settingsHint').textContent = '';
+    try {
+      await window.agentifyDesktop.setSettings({
+        maxInflightQueries: num('setMaxInflight', 2),
+        maxQueriesPerMinute: num('setQpm', 12),
+        minTabGapMs: num('setTabGap', 0),
+        minGlobalGapMs: num('setGlobalGap', 0),
+        showTabsByDefault: !!el('setShowTabsDefault').checked,
+        acknowledge: true
+      });
+      el('settingsHint').textContent = 'Saved.';
+      await refresh();
+    } catch (e) {
+      el('settingsHint').textContent = `Save failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  window.agentifyDesktop.onTabsChanged(() => refresh().catch(() => {}));
   await refresh();
 }
 
 main().catch((e) => {
-  const msg = document.createElement('div');
-  msg.className = 'card';
-  msg.textContent = `Control Center failed: ${e?.message || String(e)}`;
-  document.body.appendChild(msg);
+  const st = el('statusLine');
+  st.textContent = `Control Center error: ${e?.message || String(e)}`;
 });
 

@@ -17,14 +17,15 @@ class Mutex {
 }
 
 export class TabManager {
-  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults, userAgent }) {
+  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults, userAgent, onChanged }) {
     this.createController = createController;
     this.maxTabs = Math.max(1, Number(maxTabs) || 12);
     this.onNeedsAttention = onNeedsAttention;
     this.windowDefaults = windowDefaults || { width: 1100, height: 800, show: false, title: 'Agentify Desktop' };
     this.userAgent = typeof userAgent === 'string' && userAgent.trim() ? userAgent.trim() : null;
+    this.onChanged = typeof onChanged === 'function' ? onChanged : null;
 
-    this.tabs = new Map(); // tabId -> { id, key, name, win, controller, createdAt, lastUsedAt }
+    this.tabs = new Map(); // tabId -> { id, key, name, vendorId, vendorName, url, win, controller, createdAt, lastUsedAt }
     this.keyToId = new Map();
     this.forcedFocusTabs = new Set();
     this.mutex = new Mutex();
@@ -35,7 +36,7 @@ export class TabManager {
     this.quitting = !!v;
   }
 
-  async createTab({ key = null, name = null, url = 'https://chatgpt.com/', show = false, protectedTab = false } = {}) {
+  async createTab({ key = null, name = null, url = 'https://chatgpt.com/', show = false, protectedTab = false, vendorId = null, vendorName = null } = {}) {
     return await this.mutex.run(async () => {
       if (key && this.keyToId.has(key)) return this.keyToId.get(key);
       if (this.tabs.size >= this.maxTabs) throw new Error('max_tabs_reached');
@@ -57,6 +58,16 @@ export class TabManager {
         } catch {}
       }
       win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      const fixedTitle = `Agentify Desktop${vendorName ? ` — ${vendorName}` : ''}`;
+      try {
+        win.setTitle(fixedTitle);
+        win.on('page-title-updated', (e) => {
+          try {
+            e.preventDefault();
+            win.setTitle(fixedTitle);
+          } catch {}
+        });
+      } catch {}
 
       const controller = await this.createController({ tabId: id, win });
 
@@ -64,6 +75,9 @@ export class TabManager {
         id,
         key,
         name: name || key || `tab-${id.slice(0, 8)}`,
+        vendorId: vendorId || null,
+        vendorName: vendorName || null,
+        url: String(url || ''),
         win,
         controller,
         protectedTab: !!protectedTab,
@@ -73,11 +87,13 @@ export class TabManager {
 
       this.tabs.set(id, tab);
       if (key) this.keyToId.set(key, id);
+      this.onChanged?.();
 
       win.on('closed', () => {
         this.tabs.delete(id);
         if (tab.key) this.keyToId.delete(tab.key);
         this.forcedFocusTabs.delete(id);
+        this.onChanged?.();
       });
 
       win.on('close', (e) => {
@@ -91,15 +107,16 @@ export class TabManager {
       });
 
       await win.loadURL(url);
+      this.onChanged?.();
       return id;
     });
   }
 
-  async ensureTab({ key, name, show = false } = {}) {
+  async ensureTab({ key, name, url, vendorId, vendorName, show } = {}) {
     if (!key) throw new Error('missing_key');
     const existing = this.keyToId.get(key);
     if (existing) return existing;
-    return await this.createTab({ key, name, show: !!show });
+    return await this.createTab({ key, name, show: !!show, url, vendorId, vendorName });
   }
 
   listTabs() {
@@ -109,6 +126,10 @@ export class TabManager {
         id: t.id,
         key: t.key || null,
         name: t.name,
+        vendorId: t.vendorId || null,
+        vendorName: t.vendorName || null,
+        url: t.url || null,
+        protectedTab: !!t.protectedTab,
         createdAt: t.createdAt,
         lastUsedAt: t.lastUsedAt
       });
@@ -142,6 +163,7 @@ export class TabManager {
       try {
         tab.win.close();
       } catch {}
+      this.onChanged?.();
       return true;
     });
   }

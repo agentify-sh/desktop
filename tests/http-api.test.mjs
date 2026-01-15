@@ -336,7 +336,7 @@ test('http-api: operations run through controller.runExclusive when available', 
   assert.deepEqual(calls, ['navigate', 'ensureReady', 'query', 'readPageText', 'downloadLastAssistantImages']);
 });
 
-test('http-api: query returns 429 when maxParallelQueries exceeded', async (t) => {
+test('http-api: query returns 429 when maxInflightQueries exceeded', async (t) => {
   let started = 0;
   let release;
   const gate = new Promise((r) => (release = r));
@@ -365,8 +365,8 @@ test('http-api: query returns 429 when maxParallelQueries exceeded', async (t) =
     defaultTabId: 't0',
     serverId: 'sid-test',
     stateDir: '/tmp',
-    maxParallelQueries: 1,
-    getStatus: async () => ({ ok: true })
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => ({ maxInflightQueries: 1, maxQueriesPerMinute: 999, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false })
   });
   t.after(() => server.close());
   const port = server.address().port;
@@ -377,7 +377,8 @@ test('http-api: query returns 429 when maxParallelQueries exceeded', async (t) =
 
   const q2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2' } });
   assert.equal(q2.res.status, 429);
-  assert.equal(q2.data.error, 'too_many_queries');
+  assert.equal(q2.data.error, 'rate_limited');
+  assert.equal(q2.data.reason, 'max_inflight');
 
   release();
   const q1r = await q1;
@@ -407,11 +408,8 @@ test('http-api: query pacing returns 429 with retryAfterMs when max wait is 0', 
     defaultTabId: 't0',
     serverId: 'sid-test',
     stateDir: '/tmp',
-    maxParallelQueries: 10,
-    minQueryGapMs: 5_000,
-    minQueryGapMsGlobal: 0,
-    queryGapMaxWaitMs: 0,
-    getStatus: async () => ({ ok: true })
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => ({ maxInflightQueries: 10, maxQueriesPerMinute: 999, minTabGapMs: 5_000, minGlobalGapMs: 0, showTabsByDefault: false })
   });
   t.after(() => server.close());
   const port = server.address().port;
@@ -422,6 +420,7 @@ test('http-api: query pacing returns 429 with retryAfterMs when max wait is 0', 
   const q2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2' } });
   assert.equal(q2.res.status, 429);
   assert.equal(q2.data.error, 'rate_limited');
+  assert.equal(q2.data.reason, 'tab_gap');
   assert.equal(typeof q2.data.retryAfterMs, 'number');
   assert.ok(q2.data.retryAfterMs > 0);
 
@@ -554,4 +553,104 @@ test('http-api: shutdown calls onShutdown', async (t) => {
   // Give the async handler a moment.
   await new Promise((r2) => setTimeout(r2, 10));
   assert.equal(called, 1);
+});
+
+test('http-api: query rate limits (qpm + inflight)', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({
+      query: async () => ({ text: 'ok', codeBlocks: [], meta: {} })
+    })
+  };
+
+  let inflightBlock = false;
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => {
+      if (inflightBlock) return { maxInflightQueries: 1, maxQueriesPerMinute: 100, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false };
+      return { maxInflightQueries: 2, maxQueriesPerMinute: 1, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false };
+    }
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r1 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi', attachments: [] } });
+  assert.equal(r1.res.status, 200);
+
+  const r2 = await req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'hi2', attachments: [] } });
+  assert.equal(r2.res.status, 429);
+  assert.equal(r2.data.error, 'rate_limited');
+  assert.equal(r2.data.reason, 'qpm');
+
+  // Inflight: simulate by having controller.query hang while maxInflightQueries=1.
+  inflightBlock = true;
+  let resolveHang;
+  const hang = new Promise((r) => (resolveHang = r));
+  tabs.getControllerById = () => ({
+    query: async () => {
+      await hang;
+      return { text: 'ok', codeBlocks: [], meta: {} };
+    }
+  });
+
+  const p1 = req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'a', attachments: [] } });
+  // Let the first request enter inflight.
+  await new Promise((r) => setTimeout(r, 20));
+  const p2 = req({ port, token: 'secret', method: 'POST', pth: '/query', body: { prompt: 'b', attachments: [] } });
+
+  const p2Res = await p2;
+  assert.equal(p2Res.res.status, 429);
+  assert.equal(p2Res.data.reason, 'max_inflight');
+
+  resolveHang();
+  const p1Res = await p1;
+  assert.equal(p1Res.res.status, 200);
+});
+
+test('http-api: send uses governor too', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({
+      send: async () => ({ ok: true })
+    })
+  };
+
+  let qpm = 1;
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => ({ maxInflightQueries: 2, maxQueriesPerMinute: qpm, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r1 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi', stopAfterSend: true } });
+  assert.equal(r1.res.status, 200);
+
+  // Immediately sending again should trip qpm=1.
+  const r2 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi2' } });
+  assert.equal(r2.res.status, 429);
+  assert.equal(r2.data.reason, 'qpm');
+
+  // Increase qpm and ensure the bucket adjusts.
+  qpm = 100;
+  const r3 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi3' } });
+  assert.equal(r3.res.status, 200);
 });
