@@ -133,7 +133,8 @@ async function refresh() {
       ? 'No orchestrators running.'
       : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
   el('orchStatus').textContent = statusLine;
-  el('orchWorkspaceHint').textContent = '';
+  if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
+  else el('orchWorkspaceHint').textContent = '';
 }
 
 async function main() {
@@ -206,6 +207,8 @@ async function main() {
     const obj =
       tool === 'codex.run'
         ? { agentify_tool: tool, id: uuidv4(), key, mode: 'interactive', args: { prompt: 'Describe the task for Codex here.' } }
+        : tool === 'fs.read'
+          ? { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: { path: 'relative/path/to/file.txt', maxBytes: 50000 } }
         : { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: {} };
     const text = `\`\`\`json\n${JSON.stringify(obj, null, 2)}\n\`\`\``;
     try {

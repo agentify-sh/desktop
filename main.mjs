@@ -11,6 +11,7 @@ import { startHttpApi } from './http-api.mjs';
 import { TabManager } from './tab-manager.mjs';
 import { defaultStateDir, ensureToken, readSettings, writeSettings, defaultSettings, writeState } from './state.mjs';
 import { getWorkspace, setWorkspace } from './orchestrator/storage.mjs';
+import { logPath as orchestratorLogPath } from './orchestrator/logging.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -334,7 +335,7 @@ async function main() {
     const running = [];
     for (const [k, v] of orchestrators.entries()) {
       if (!v?.child) continue;
-      running.push({ key: k, pid: v.pid, startedAt: v.startedAt });
+      running.push({ key: k, pid: v.pid, startedAt: v.startedAt, logPath: orchestratorLogPath(stateDir, k) });
     }
     return { ok: true, running };
   });
