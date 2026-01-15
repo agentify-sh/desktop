@@ -36,6 +36,20 @@ export function findNextUnHandled(blocks, isHandledFn) {
   return null;
 }
 
+export function findOldestUnHandled(blocks, isHandledFn, { keyFilter = null } = {}) {
+  const arr = Array.isArray(blocks) ? blocks : [];
+  const kf = keyFilter ? String(keyFilter).trim() : null;
+  for (let i = 0; i < arr.length; i++) {
+    const b = arr[i];
+    const id = String(b?.id || '').trim();
+    const key = String(b?.key || '').trim();
+    if (!id || !key) continue;
+    if (kf && key !== kf) continue;
+    if (!isHandledFn(key, id)) return b;
+  }
+  return null;
+}
+
 export function normalizeToolRequest(obj, { defaultKey = null } = {}) {
   if (!obj || typeof obj !== 'object') throw new Error('invalid_tool_request');
   const tool = String(obj.agentify_tool || '').trim();
