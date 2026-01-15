@@ -91,9 +91,39 @@ Agentify Desktop includes a built-in governor to reduce accidental high-rate aut
 You can adjust these limits in the Control Center after acknowledging the disclaimer.
 
 ## Single-chat emulator (experimental)
-Agentify Desktop can optionally run a local “orchestrator” that watches a ChatGPT thread for fenced JSON tool requests.
+Agentify Desktop can optionally run a local “orchestrator” that watches a ChatGPT thread for fenced JSON tool requests, runs Codex locally, and posts results back into the *same* ChatGPT thread. This gives you a “single-chat” orchestration feel without relying on ChatGPT’s built-in tools/MCP mode.
 
-It can run Codex CLI locally and post back results (including a bounded diff “review packet”). Manage it from the Control Center under **Orchestrator**.
+### What it does
+- Treats your ChatGPT Web thread as the “mothership” (planning + context).
+- Watches for tool requests you paste as fenced JSON blocks.
+- Runs Codex CLI locally in your workspace (interactive or non-interactive).
+- Posts back: a short outcome + a bounded diff/review packet (so you’re not pasting 200k+ chars every time).
+
+### Quick test (recommended)
+1) Start the app and sign in:
+- Run `./scripts/quickstart.sh --show-tabs`
+- In the Control Center, click **Show default** and sign in to `https://chatgpt.com`
+
+2) Start an orchestrator session:
+- In the Control Center → **Orchestrator**, start an orchestrator for a project `key` (one key per project/workstream).
+
+3) In the ChatGPT thread (same tab/key), paste a fenced JSON request like:
+```json
+{
+  "tool": "codex.run",
+  "mode": "interactive",
+  "args": {
+    "prompt": "Find the README file and add a short troubleshooting section. Then run tests."
+  }
+}
+```
+
+4) Wait for the orchestrator to post results back into the thread.
+
+### Tips
+- Use one stable `key` per project so parallel jobs don’t mix.
+- If the orchestrator can’t find the right workspace root, set it in the Control Center (Workspace/Allowlist), then retry.
+- If you want the orchestrator to post less frequently, keep prompts focused (it posts progress updates on a timer).
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
