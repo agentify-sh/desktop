@@ -375,3 +375,42 @@ test('http-api: query rate limits (qpm + inflight)', async (t) => {
   const p1Res = await p1;
   assert.equal(p1Res.res.status, 200);
 });
+
+test('http-api: send uses governor too', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({
+      send: async () => ({ ok: true })
+    })
+  };
+
+  let qpm = 1;
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true }),
+    getSettings: async () => ({ maxInflightQueries: 2, maxQueriesPerMinute: qpm, minTabGapMs: 0, minGlobalGapMs: 0, showTabsByDefault: false })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r1 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi', stopAfterSend: true } });
+  assert.equal(r1.res.status, 200);
+
+  // Immediately sending again should trip qpm=1.
+  const r2 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi2' } });
+  assert.equal(r2.res.status, 429);
+  assert.equal(r2.data.reason, 'qpm');
+
+  // Increase qpm and ensure the bucket adjusts.
+  qpm = 100;
+  const r3 = await req({ port, token: 'secret', method: 'POST', pth: '/send', body: { text: 'hi3' } });
+  assert.equal(r3.res.status, 200);
+});

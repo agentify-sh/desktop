@@ -3,11 +3,11 @@ import path from 'node:path';
 
 import { defaultStateDir } from './state.mjs';
 import { ensureDesktopRunning, requestJson } from './mcp-lib.mjs';
-import { parseAgentifyToolBlocks, normalizeToolRequest } from './orchestrator/protocol.mjs';
+import { parseAgentifyToolBlocks, normalizeToolRequest, findNextUnHandled } from './orchestrator/protocol.mjs';
 import { detectWorkspaceRoot, detectTestCommand } from './orchestrator/workspace.mjs';
 import { buildReviewPacket } from './orchestrator/git-diff.mjs';
 import { formatResultBlock, makeChunkedMessages } from './orchestrator/posting.mjs';
-import { getSession, setSession, getWorkspace, setWorkspace, isHandled, markHandled } from './orchestrator/storage.mjs';
+import { getSession, setSession, getWorkspace, setWorkspace, isHandled, markHandled, loadHandled } from './orchestrator/storage.mjs';
 import { runCodexExec } from './orchestrator/codex.mjs';
 
 function argValue(name) {
@@ -30,6 +30,15 @@ async function postUserMessage(conn, { key, text, timeoutMs = 10 * 60_000 }) {
     method: 'POST',
     path: '/query',
     body: { key, prompt: text, attachments: [], timeoutMs }
+  });
+}
+
+async function sendNoWait(conn, { key, text, stopAfterSend = true }) {
+  return await requestJson({
+    ...conn,
+    method: 'POST',
+    path: '/send',
+    body: { key, text, stopAfterSend: !!stopAfterSend }
   });
 }
 
@@ -85,12 +94,9 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
   let lastPostAt = 0;
   const postMilestone = async (msg) => {
     const now = Date.now();
-    if (now - lastPostAt < 60_000) return;
+    if (now - lastPostAt < 45_000) return;
     lastPostAt = now;
-    await postUserMessage(conn, {
-      key,
-      text: `Progress update (no reply needed): ${msg}`
-    }).catch(() => {});
+    await sendNoWait(conn, { key, text: `Progress update (no reply needed): ${msg}`, stopAfterSend: true }).catch(() => {});
   };
 
   const codexResult = await runCodexExec({
@@ -149,9 +155,61 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
   }
 }
 
+async function handleGitDiff({ stateDir, key, args, conn }) {
+  let workspaceDir = await getWorkspace(stateDir, { key }).catch(() => null);
+  if (!workspaceDir) {
+    workspaceDir = await detectWorkspaceRoot(process.cwd());
+    await setWorkspace(stateDir, { key, workspace: { root: workspaceDir } });
+  }
+  workspaceDir = path.resolve(workspaceDir?.root || workspaceDir);
+  const diffPacket = await buildReviewPacket({ workspaceDir, maxChars: Number(args.maxChars || 35_000) || 35_000 });
+  const result = {
+    agentify_result_for: args.id,
+    ok: true,
+    diff: { stat: diffPacket.stat || '', files: diffPacket.files || [] }
+  };
+  const body =
+    `Agentify diff:\n\n` +
+    formatResultBlock(result) +
+    (diffPacket.patch ? `\n\`\`\`diff\n${diffPacket.patch}\n\`\`\`\n` : '');
+  for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
+    await postUserMessage(conn, { key, text: m }).catch(() => {});
+    await sleep(400);
+  }
+}
+
+async function handleTestsRun({ stateDir, key, args, conn }) {
+  let workspaceDir = await getWorkspace(stateDir, { key }).catch(() => null);
+  if (!workspaceDir) {
+    workspaceDir = await detectWorkspaceRoot(process.cwd());
+    await setWorkspace(stateDir, { key, workspace: { root: workspaceDir } });
+  }
+  workspaceDir = path.resolve(workspaceDir?.root || workspaceDir);
+  const testCommand = (await detectTestCommand(workspaceDir)) || null;
+  const tests = await runTestsMaybe({ workspaceDir, testCommand, timeoutMs: Number(args.timeoutMs || 0) || 20 * 60_000 });
+  const result = {
+    agentify_result_for: args.id,
+    ok: tests.ok,
+    tests: { command: tests.command, ok: tests.ok, tail: tests.output ? tests.output.slice(-8000) : '' }
+  };
+  const body = `Agentify tests:\n\n${formatResultBlock(result)}`;
+  for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
+    await postUserMessage(conn, { key, text: m }).catch(() => {});
+    await sleep(400);
+  }
+}
+
 async function executeTool({ stateDir, req, conn }) {
   if (req.tool === 'codex.run') {
     await handleCodexRun({ stateDir, key: req.key, mode: req.mode, args: { ...req.args, id: req.id }, conn });
+    return;
+  }
+  if (req.tool === 'git.diff') {
+    await handleGitDiff({ stateDir, key: req.key, args: { ...req.args, id: req.id }, conn });
+    return;
+  }
+  if (req.tool === 'tests.run') {
+    await handleTestsRun({ stateDir, key: req.key, args: { ...req.args, id: req.id }, conn });
     return;
   }
   const err = new Error('unknown_tool');
@@ -172,7 +230,9 @@ async function main() {
   while (true) {
     const text = await readThread(conn, { key, maxChars }).catch(() => '');
     const blocks = parseAgentifyToolBlocks(text);
-    const last = blocks.length ? blocks[blocks.length - 1] : null;
+    const handled = await loadHandled(stateDir).catch(() => ({ keys: {} }));
+    const last =
+      findNextUnHandled(blocks, (k, id) => !!handled?.keys?.[String(k)]?.[String(id)]) || null;
     if (last) {
       try {
         const req = normalizeToolRequest(last, { defaultKey: key });
@@ -184,7 +244,7 @@ async function main() {
       } catch (e) {
         // Post parse errors as a hint but don't loop endlessly.
         const msg = `Agentify orchestrator error: ${e?.message || String(e)}`;
-        await postUserMessage(conn, { key, text: msg }).catch(() => {});
+        await sendNoWait(conn, { key, text: msg, stopAfterSend: true }).catch(() => {});
       }
     }
 
@@ -197,4 +257,3 @@ main().catch((e) => {
   console.error('[agentify-orchestrator] fatal', e);
   process.exit(1);
 });
-

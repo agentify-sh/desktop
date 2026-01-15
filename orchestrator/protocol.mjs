@@ -24,6 +24,18 @@ export function parseAgentifyToolBlocks(pageText) {
   return blocks.map((b) => b.obj);
 }
 
+export function findNextUnHandled(blocks, isHandledFn) {
+  const arr = Array.isArray(blocks) ? blocks : [];
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const b = arr[i];
+    const id = String(b?.id || '').trim();
+    const key = String(b?.key || '').trim();
+    if (!id || !key) continue;
+    if (!isHandledFn(key, id)) return b;
+  }
+  return null;
+}
+
 export function normalizeToolRequest(obj, { defaultKey = null } = {}) {
   if (!obj || typeof obj !== 'object') throw new Error('invalid_tool_request');
   const tool = String(obj.agentify_tool || '').trim();
@@ -42,4 +54,3 @@ export function createToolRequest({ tool, key, mode = 'interactive', args = {} }
   const id = crypto.randomUUID();
   return { agentify_tool: tool, id, key, mode, args };
 }
-

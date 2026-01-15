@@ -28,6 +28,16 @@ function setChecked(id, value) {
   el(id).checked = !!value;
 }
 
+function uuidv4() {
+  // RFC4122 v4, from crypto.getRandomValues (browser-safe).
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function refresh() {
   const state = await window.agentifyDesktop.getState();
   const settings = await window.agentifyDesktop.getSettings();
@@ -182,6 +192,26 @@ async function main() {
       await orchRefresh();
     } catch (e) {
       el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
+    }
+  };
+
+  el('btnOrchCopy').onclick = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) {
+      el('orchStatus').textContent = 'Enter a project key first.';
+      return;
+    }
+    const tool = String(el('orchTool').value || 'codex.run').trim();
+    const obj =
+      tool === 'codex.run'
+        ? { agentify_tool: tool, id: uuidv4(), key, mode: 'interactive', args: { prompt: 'Describe the task for Codex here.' } }
+        : { agentify_tool: tool, id: uuidv4(), key, mode: 'batch', args: {} };
+    const text = `\`\`\`json\n${JSON.stringify(obj, null, 2)}\n\`\`\``;
+    try {
+      await navigator.clipboard.writeText(text);
+      el('orchStatus').textContent = 'Copied tool JSON to clipboard. Paste it into the ChatGPT thread.';
+    } catch {
+      el('orchStatus').textContent = 'Copy failed. Your browser may block clipboard access; select and copy manually: ' + text;
     }
   };
 

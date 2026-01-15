@@ -69,13 +69,24 @@
               <div class="label">Workspace path (optional)</div>
               <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
             </label>
+            <label class="field">
+              <div class="label">Tool template</div>
+              <select id="orchTool">
+                <option value="codex.run">codex.run</option>
+                <option value="git.diff">git.diff</option>
+                <option value="tests.run">tests.run</option>
+              </select>
+            </label>
           </div>
           <div class="row">
             <div class="btnRow">
               <button id="btnOrchStart" class="btn primary">Start</button>
               <button id="btnOrchStop" class="btn secondary">Stop</button>
             </div>
-            <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
+            <div class="btnRow">
+              <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
+              <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
+            </div>
           </div>
           <div id="orchStatus" class="hint"></div>
         </section>
