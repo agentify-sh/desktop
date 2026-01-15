@@ -91,17 +91,29 @@ export async function loadWorkspaces(stateDir) {
   return data;
 }
 
+function normalizeWorkspace(workspace) {
+  if (!workspace || typeof workspace !== 'object') return null;
+  const root = String(workspace.root || '').trim();
+  if (!root) return null;
+  const allowRootsRaw = Array.isArray(workspace.allowRoots) ? workspace.allowRoots : [root];
+  const allowRoots = Array.from(new Set(allowRootsRaw.map((r) => String(r || '').trim()).filter(Boolean)));
+  return {
+    root,
+    allowRoots: allowRoots.length ? allowRoots : [root],
+    configuredAt: typeof workspace.configuredAt === 'string' && workspace.configuredAt.trim() ? workspace.configuredAt.trim() : new Date().toISOString()
+  };
+}
+
 export async function setWorkspace(stateDir, { key, workspace }) {
   const data = await loadWorkspaces(stateDir);
   const k = String(key || '').trim();
   if (!k) throw new Error('missing_key');
-  data.keys[k] = workspace || null;
+  data.keys[k] = normalizeWorkspace(workspace);
   await writeJson(workspaceConfigPath(stateDir), data, { mode: 0o600 });
   return data.keys[k];
 }
 
 export async function getWorkspace(stateDir, { key }) {
   const data = await loadWorkspaces(stateDir);
-  return data?.keys?.[String(key)] || null;
+  return normalizeWorkspace(data?.keys?.[String(key)] || null);
 }
-

@@ -133,6 +133,7 @@ async function refresh() {
       ? 'No orchestrators running.'
       : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
   el('orchStatus').textContent = statusLine;
+  el('orchWorkspaceHint').textContent = '';
 }
 
 async function main() {
@@ -213,6 +214,21 @@ async function main() {
     } catch {
       el('orchStatus').textContent = 'Copy failed. Your browser may block clipboard access; select and copy manually: ' + text;
     }
+  };
+
+  el('orchKey').onchange = async () => {
+    const key = String(el('orchKey').value || '').trim();
+    if (!key) return;
+    try {
+      const ws = await window.agentifyDesktop.getWorkspaceForKey({ key });
+      const root = ws?.workspace?.root || '';
+      if (root) {
+        el('orchWorkspace').value = root;
+        el('orchWorkspaceHint').textContent = `Saved workspace: ${root}`;
+      } else {
+        el('orchWorkspaceHint').textContent = 'No saved workspace for this key yet.';
+      }
+    } catch {}
   };
 
   const updateSaveEnabled = () => {

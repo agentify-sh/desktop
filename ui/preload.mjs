@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('agentifyDesktop', {
   startOrchestrator: (args) => ipcRenderer.invoke('agentify:startOrchestrator', args || {}),
   stopOrchestrator: (args) => ipcRenderer.invoke('agentify:stopOrchestrator', args || {}),
   setWorkspaceForKey: (args) => ipcRenderer.invoke('agentify:setWorkspaceForKey', args || {}),
+  getWorkspaceForKey: (args) => ipcRenderer.invoke('agentify:getWorkspaceForKey', args || {}),
   createTab: (args) => ipcRenderer.invoke('agentify:createTab', args || {}),
   showTab: (args) => ipcRenderer.invoke('agentify:showTab', args || {}),
   hideTab: (args) => ipcRenderer.invoke('agentify:hideTab', args || {}),

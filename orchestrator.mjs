@@ -24,15 +24,6 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function postUserMessage(conn, { key, text, timeoutMs = 10 * 60_000 }) {
-  return await requestJson({
-    ...conn,
-    method: 'POST',
-    path: '/query',
-    body: { key, prompt: text, attachments: [], timeoutMs }
-  });
-}
-
 async function sendNoWait(conn, { key, text, stopAfterSend = true }) {
   return await requestJson({
     ...conn,
@@ -150,7 +141,7 @@ async function handleCodexRun({ stateDir, key, mode, args, conn }) {
 
   const msgs = makeChunkedMessages({ header: 'Agentify Tool Result', body: reviewText, maxChars: Number(args.maxPostChars || 25_000) || 25_000 });
   for (const m of msgs) {
-    await postUserMessage(conn, { key, text: m }).catch(() => {});
+    await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
     await sleep(500);
   }
 }
@@ -173,7 +164,7 @@ async function handleGitDiff({ stateDir, key, args, conn }) {
     formatResultBlock(result) +
     (diffPacket.patch ? `\n\`\`\`diff\n${diffPacket.patch}\n\`\`\`\n` : '');
   for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
-    await postUserMessage(conn, { key, text: m }).catch(() => {});
+    await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
     await sleep(400);
   }
 }
@@ -194,7 +185,7 @@ async function handleTestsRun({ stateDir, key, args, conn }) {
   };
   const body = `Agentify tests:\n\n${formatResultBlock(result)}`;
   for (const m of makeChunkedMessages({ header: 'Agentify Tool Result', body, maxChars: Number(args.maxPostChars || 25_000) || 25_000 })) {
-    await postUserMessage(conn, { key, text: m }).catch(() => {});
+    await sendNoWait(conn, { key, text: m, stopAfterSend: true }).catch(() => {});
     await sleep(400);
   }
 }
