@@ -11,11 +11,11 @@ It exposes an MCP server so tools like Codex can:
 ## Supported sites
 **Supported**
 - `chatgpt.com`
-- `perplexity.ai` (best-effort selectors)
-- `claude.ai` (best-effort selectors)
-- `aistudio.google.com/prompts/new_chat` (best-effort selectors)
-- `gemini.google.com` (best-effort selectors)
-- `grok.com` (best-effort selectors)
+- `perplexity.ai`
+- `claude.ai`
+- `aistudio.google.com`
+- `gemini.google.com`
+- `grok.com`
 
 **Planned**
 - Additional vendor profiles via `vendors.json` + selector overrides.
