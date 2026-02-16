@@ -130,28 +130,31 @@ opencode mcp list
 
 If you already had your client open, restart it (or start a new session) so it reloads MCP server config.
 
+## Developer workflows (natural language)
+Use plain requests in your MCP client. You usually do not need to call tool IDs directly.
+
+1. **Plan in ChatGPT Pro or Gemini Deep Think, then execute in phases.**
+Prompt:
+"Open a Gemini tab with key `plan-auth-v2`, ask Deep Think for a migration plan from session cookies to JWT in this repo, and return a 10-step checklist with risk and rollback per step."
+Follow-up:
+"Now use key `plan-auth-v2` and generate step 1 implementation only, including tests."
+
+2. **Prompt all vendors and compare output quality before coding.**
+Prompt:
+"Create tabs for keys `cmp-chatgpt`, `cmp-claude`, `cmp-gemini`, and `cmp-perplexity`. Send the same architecture prompt to each. Then compare responses in a table by correctness, operational risk, implementation complexity, and testability."
+
+3. **Run incident triage with attached evidence.**
+Prompt:
+"Open key `incident-prod-api`, send `./incident/error.log` and `./incident/dashboard.png`, and produce: likely root cause, 30-minute hotfix plan, rollback, and validation checklist."
+
+Use explicit tool calls (`agentify_query`, `agentify_read_page`, etc.) when you need deterministic/reproducible runs or when debugging tool selection.
+
 ## How to use (practical)
 - **Use ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok normally (manual):** write a plan/spec in the UI, then in your MCP client call `agentify_read_page` to pull the transcript into your workflow.
 - **Drive ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok from your MCP client:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
-
-## Natural language usage (recommended)
-You can usually use Agentify naturally without naming tool IDs. Ask your MCP client what you want done, and it can map your request to the right `agentify_*` tools.
-
-Examples you can copy-paste:
-```text
-Open a Claude tab with key "incident-prod-api" and make sure it is ready for input.
-
-Send this prompt in that tab and attach ./incident/error.log and ./incident/dashboard.png.
-
-Read the latest response from key "incident-prod-api" and summarize the top 5 action items.
-
-Create a Perplexity tab with key "research-llm-pricing", ask for 2026 pricing comparisons, then return a concise table.
-```
-
-Use explicit tool calls (`agentify_query`, `agentify_read_page`, etc.) when you need deterministic/reproducible runs or when debugging tool selection.
 
 ## Real-world prompt example
 Example `agentify_query` input:
