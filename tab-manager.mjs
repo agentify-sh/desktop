@@ -17,13 +17,14 @@ class Mutex {
 }
 
 export class TabManager {
-  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults, userAgent, onChanged }) {
+  constructor({ createController, maxTabs = 12, onNeedsAttention, windowDefaults, userAgent, onChanged, popupPolicy }) {
     this.createController = createController;
     this.maxTabs = Math.max(1, Number(maxTabs) || 12);
     this.onNeedsAttention = onNeedsAttention;
     this.windowDefaults = windowDefaults || { width: 1100, height: 800, show: false, title: 'Agentify Desktop' };
     this.userAgent = typeof userAgent === 'string' && userAgent.trim() ? userAgent.trim() : null;
     this.onChanged = typeof onChanged === 'function' ? onChanged : null;
+    this.popupPolicy = typeof popupPolicy === 'function' ? popupPolicy : (() => false);
 
     this.tabs = new Map(); // tabId -> { id, key, name, vendorId, vendorName, url, win, controller, createdAt, lastUsedAt }
     this.keyToId = new Map();
@@ -57,7 +58,31 @@ export class TabManager {
           win.webContents.setUserAgent(this.userAgent);
         } catch {}
       }
-      win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      win.webContents.setWindowOpenHandler((details) => {
+        const allow = !!this.popupPolicy({
+          url: details?.url || '',
+          frameName: details?.frameName || '',
+          disposition: details?.disposition || '',
+          vendorId: vendorId || 'chatgpt'
+        });
+        if (!allow) return { action: 'deny' };
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 520,
+            height: 760,
+            show: true,
+            title: 'Agentify Desktop — Sign in',
+            autoHideMenuBar: true,
+            webPreferences: {
+              sandbox: true,
+              contextIsolation: true,
+              nodeIntegration: false,
+              ...(this.windowDefaults.webPreferences || {})
+            }
+          }
+        };
+      });
       const fixedTitle = `Agentify Desktop${vendorName ? ` — ${vendorName}` : ''}`;
       try {
         win.setTitle(fixedTitle);
