@@ -14,9 +14,9 @@ It exposes an MCP server so tools like Codex can:
 - `perplexity.ai` (best-effort selectors)
 - `claude.ai` (best-effort selectors)
 - `aistudio.google.com/prompts/new_chat` (best-effort selectors)
+- `grok.com` (best-effort selectors)
 
 **Planned**
-- `grok.com`
 
 ## CAPTCHA policy (human-in-the-loop)
 Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solvers. If a human verification appears, the app pauses automation, brings the relevant window to the front, and waits for you to complete the check manually.
@@ -79,8 +79,8 @@ codex mcp list
 If you already had Codex open, restart it (or start a new session) so it reloads MCP server config.
 
 ## How to use (practical)
-- **Use ChatGPT/Perplexity/Claude/AI Studio normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
-- **Drive ChatGPT/Perplexity/Claude/AI Studio from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Use ChatGPT/Perplexity/Claude/AI Studio/Grok normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT/Perplexity/Claude/AI Studio/Grok from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
