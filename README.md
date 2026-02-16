@@ -25,10 +25,10 @@ Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solv
 
 ## Requirements
 - Node.js 20+ (22 recommended)
-- Codex CLI (optional, for MCP)
+- MCP-capable CLI (optional, for MCP): Codex, Claude Code, or OpenCode
 
 ## Quickstart (macOS/Linux)
-Quickstart installs dependencies, registers the MCP server with Codex (if installed), and starts Agentify Desktop:
+Quickstart installs dependencies, auto-registers the MCP server for installed clients (Codex/Claude Code/OpenCode), and starts Agentify Desktop:
 
 ```bash
 git clone git@github.com:agentify-sh/desktop.git
@@ -44,6 +44,16 @@ Debug-friendly: show newly-created tab windows by default:
 Foreground mode (logs to your terminal, Ctrl+C to stop):
 ```bash
 ./scripts/quickstart.sh --foreground
+```
+
+Choose MCP registration target explicitly:
+```bash
+./scripts/quickstart.sh --client auto     # default
+./scripts/quickstart.sh --client codex
+./scripts/quickstart.sh --client claude
+./scripts/quickstart.sh --client opencode
+./scripts/quickstart.sh --client all
+./scripts/quickstart.sh --client none
 ```
 
 ## Manual install & run
@@ -62,7 +72,10 @@ Sign in to your target vendor in the tab window.
 
 If your account uses SSO (Google/Microsoft/Apple), keep **Settings → Allow auth popups** enabled in the Control Center. ChatGPT login often opens provider auth in a popup, and blocking popups can prevent login from completing.
 
-## Connect from Codex (MCP)
+## Connect from MCP clients
+Quickstart can register MCP automatically, but manual commands are below if you prefer explicit setup.
+
+### Codex
 From the repo root:
 ```bash
 codex mcp add agentify-desktop -- node mcp-server.mjs [--show-tabs]
@@ -78,11 +91,48 @@ Confirm registration:
 codex mcp list
 ```
 
-If you already had Codex open, restart it (or start a new session) so it reloads MCP server config.
+### Claude Code
+From the repo root:
+```bash
+claude mcp add --transport stdio agentify-desktop -- node mcp-server.mjs [--show-tabs]
+```
+
+From anywhere (absolute path):
+```bash
+claude mcp add --transport stdio agentify-desktop -- node /ABS/PATH/TO/desktop/mcp-server.mjs [--show-tabs]
+```
+
+Confirm registration:
+```bash
+claude mcp list
+```
+
+### OpenCode
+OpenCode can be configured in `~/.config/opencode/opencode.json`:
+```json
+{
+  "mcp": {
+    "agentify-desktop": {
+      "type": "local",
+      "command": ["node", "/ABS/PATH/TO/desktop/mcp-server.mjs"],
+      "enabled": true
+    }
+  }
+}
+```
+
+`./scripts/quickstart.sh --client opencode` (or `--client all`) writes/updates this entry automatically.
+
+Confirm registration:
+```bash
+opencode mcp list
+```
+
+If you already had your client open, restart it (or start a new session) so it reloads MCP server config.
 
 ## How to use (practical)
-- **Use ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
-- **Drive ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Use ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok normally (manual):** write a plan/spec in the UI, then in your MCP client call `agentify_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok from your MCP client:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
@@ -103,6 +153,8 @@ You can adjust these limits in the Control Center after acknowledging the discla
 
 ## Single-chat emulator (experimental)
 Agentify Desktop can optionally run a local “orchestrator” that watches a ChatGPT thread for fenced JSON tool requests, runs Codex locally, and posts results back into the *same* ChatGPT thread. This gives you a “single-chat” orchestration feel without relying on ChatGPT’s built-in tools/MCP mode.
+
+The orchestrator currently invokes Codex CLI directly. Core `agentify_*` MCP tools remain client-agnostic.
 
 ### What it does
 - Treats your ChatGPT Web thread as the “mothership” (planning + context).
