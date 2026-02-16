@@ -34,6 +34,22 @@ body {
 .titles .sub { font-size: 12px; color: rgba(233,236,242,0.72); margin-top: 2px; }
 
 .actions { display: flex; gap: 8px; }
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.4px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.badge.warn {
+  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(127, 29, 29, 0.35);
+}
 
 .main {
   padding: 14px;
@@ -56,6 +72,13 @@ body {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
+}
+.settingsGrid {
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+.compactNum {
+  max-width: 160px;
 }
 
 .field .label { font-size: 12px; color: rgba(233,236,242,0.72); margin-bottom: 6px; }
@@ -126,7 +149,7 @@ input::placeholder { color: rgba(233,236,242,0.45); }
   border-top: 1px solid rgba(255,255,255,0.08);
   padding: 10px 14px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   background: rgba(0,0,0,0.15);
 }

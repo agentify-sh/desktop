@@ -17,6 +17,7 @@
           </div>
         </div>
         <div class="actions">
+          <button id="btnShowDefault" class="btn secondary" title="Show default tab">Show default</button>
           <button id="btnOpenState" class="btn secondary" title="Open state folder">State</button>
           <button id="btnRefresh" class="btn secondary" title="Refresh">Refresh</button>
         </div>
@@ -56,7 +57,10 @@
         </section>
 
         <section class="card">
-          <div class="cardTitle">Orchestrator (single-chat emulator)</div>
+          <div class="cardTitle">Orchestrator (single-chat emulator) <span class="badge warn">EXPERIMENTAL / UNTESTED</span></div>
+          <div class="hint">
+            This surface is currently experimental and not part of the stable smoke-tested path. Use with caution.
+          </div>
           <div class="hint">
             Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
           </div>
@@ -101,22 +105,22 @@
           <div class="hint">
             These defaults exist to reduce accidental high-rate automation. Automating web UIs may violate website terms; use responsibly.
           </div>
-          <div class="grid">
+          <div class="grid settingsGrid">
             <label class="field">
               <div class="label">Max in-flight queries</div>
-              <input id="setMaxInflight" type="number" min="1" max="12" step="1" />
+              <input id="setMaxInflight" class="compactNum" type="number" min="1" max="12" step="1" />
             </label>
             <label class="field">
               <div class="label">Max queries per minute</div>
-              <input id="setQpm" type="number" min="1" max="600" step="1" />
+              <input id="setQpm" class="compactNum" type="number" min="1" max="600" step="1" />
             </label>
             <label class="field">
               <div class="label">Min gap per tab (ms)</div>
-              <input id="setTabGap" type="number" min="0" max="60000" step="50" />
+              <input id="setTabGap" class="compactNum" type="number" min="0" max="60000" step="50" />
             </label>
             <label class="field">
               <div class="label">Min global gap (ms)</div>
-              <input id="setGlobalGap" type="number" min="0" max="10000" step="10" />
+              <input id="setGlobalGap" class="compactNum" type="number" min="0" max="10000" step="10" />
             </label>
           </div>
           <div class="row">
@@ -157,7 +161,6 @@
 
       <footer class="footer">
         <div id="statusLine" class="status">Loading…</div>
-        <button id="btnShowDefault" class="btn secondary">Show default</button>
       </footer>
     </div>
 

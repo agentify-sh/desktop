@@ -16,8 +16,13 @@ contextBridge.exposeInMainWorld('agentifyDesktop', {
   closeTab: (args) => ipcRenderer.invoke('agentify:closeTab', args || {}),
   openStateDir: () => ipcRenderer.invoke('agentify:openStateDir'),
   onTabsChanged: (cb) => {
-    if (typeof cb !== 'function') return;
-    ipcRenderer.on('agentify:tabsChanged', () => cb());
+    if (typeof cb !== 'function') return () => {};
+    const handler = () => cb();
+    ipcRenderer.on('agentify:tabsChanged', handler);
+    return () => {
+      try {
+        ipcRenderer.removeListener('agentify:tabsChanged', handler);
+      } catch {}
+    };
   }
 });
-

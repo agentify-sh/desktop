@@ -38,28 +38,94 @@ function uuidv4() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-async function refresh() {
-  const state = await window.agentifyDesktop.getState();
-  const settings = await window.agentifyDesktop.getSettings();
-  const orch = await window.agentifyDesktop.getOrchestrators();
+const bridge = window?.agentifyDesktop || {};
+const fallbackVendors = [
+  { id: 'chatgpt', name: 'ChatGPT', status: 'supported' },
+  { id: 'perplexity', name: 'Perplexity', status: 'supported' },
+  { id: 'claude', name: 'Claude', status: 'supported' },
+  { id: 'grok', name: 'Grok', status: 'supported' },
+  { id: 'aistudio', name: 'Google AI Studio', status: 'supported' },
+  { id: 'gemini', name: 'Gemini', status: 'supported' }
+];
 
-  const vendorSelect = el('vendorSelect');
-  vendorSelect.innerHTML = '';
-  for (const v of state.vendors || []) {
+function hasApi(name) {
+  return typeof bridge?.[name] === 'function';
+}
+
+async function callApi(name, args, { fallback = null, required = false } = {}) {
+  if (!hasApi(name)) {
+    if (required) throw new Error(`missing_desktop_api:${name}`);
+    return fallback;
+  }
+  try {
+    if (typeof args === 'undefined') return await bridge[name]();
+    return await bridge[name](args);
+  } catch (e) {
+    if (required) throw e;
+    return fallback;
+  }
+}
+
+function defaultState() {
+  return {
+    ok: false,
+    vendors: [...fallbackVendors],
+    tabs: [],
+    defaultTabId: null,
+    stateDir: ''
+  };
+}
+
+function defaultSettings() {
+  return {
+    maxInflightQueries: 2,
+    maxQueriesPerMinute: 12,
+    minTabGapMs: 0,
+    minGlobalGapMs: 0,
+    showTabsByDefault: false,
+    allowAuthPopups: true,
+    acknowledgedAt: null
+  };
+}
+
+function statusText(msg) {
+  el('statusLine').textContent = msg;
+}
+
+let lastState = defaultState();
+let refreshInFlight = null;
+
+async function refresh() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const state = (await callApi('getState', undefined, { fallback: lastState })) || lastState;
+    const settings = (await callApi('getSettings', undefined, { fallback: defaultSettings() })) || defaultSettings();
+    const orch = (await callApi('getOrchestrators', undefined, { fallback: { running: [], recent: [] } })) || { running: [], recent: [] };
+    lastState = { ...defaultState(), ...state };
+
+    const vendorSelect = el('vendorSelect');
+    const prev = String(vendorSelect.value || '').trim();
+    vendorSelect.innerHTML = '';
+    const vendors = Array.isArray(lastState.vendors) && lastState.vendors.length ? lastState.vendors : fallbackVendors;
+    for (const v of vendors) {
     const opt = document.createElement('option');
-    opt.value = v.id;
+      opt.value = String(v.id || '').trim();
     opt.textContent = `${v.name}${v.status && v.status !== 'supported' ? ` (${v.status})` : ''}`;
-    if (v.id === 'chatgpt') opt.selected = true;
+      if (prev && prev === opt.value) opt.selected = true;
+      else if (!prev && v.id === 'chatgpt') opt.selected = true;
     vendorSelect.appendChild(opt);
   }
+    if (!vendorSelect.value && vendorSelect.options.length > 0) {
+      vendorSelect.value = vendorSelect.options[0].value;
+    }
 
-  const tabs = Array.isArray(state.tabs) ? state.tabs : [];
-  const list = el('tabsList');
-  const empty = el('tabsEmpty');
-  list.innerHTML = '';
-  empty.style.display = tabs.length ? 'none' : 'block';
+    const tabs = Array.isArray(lastState.tabs) ? lastState.tabs : [];
+    const list = el('tabsList');
+    const empty = el('tabsEmpty');
+    list.innerHTML = '';
+    empty.style.display = tabs.length ? 'none' : 'block';
 
-  for (const t of tabs) {
+    for (const t of tabs) {
     const row = document.createElement('div');
     row.className = 'tab';
 
@@ -86,14 +152,22 @@ async function refresh() {
     btnShow.className = 'btn secondary';
     btnShow.textContent = 'Show';
     btnShow.onclick = async () => {
-      await window.agentifyDesktop.showTab({ tabId: t.id });
+        try {
+          await callApi('showTab', { tabId: t.id }, { required: true });
+        } finally {
+          await refresh();
+        }
     };
 
     const btnHide = document.createElement('button');
     btnHide.className = 'btn secondary';
     btnHide.textContent = 'Hide';
     btnHide.onclick = async () => {
-      await window.agentifyDesktop.hideTab({ tabId: t.id });
+        try {
+          await callApi('hideTab', { tabId: t.id }, { required: true });
+        } finally {
+          await refresh();
+        }
     };
 
     const btnClose = document.createElement('button');
@@ -101,7 +175,11 @@ async function refresh() {
     btnClose.textContent = 'Close';
     btnClose.onclick = async () => {
       if (t.protectedTab) return;
-      await window.agentifyDesktop.closeTab({ tabId: t.id });
+        try {
+          await callApi('closeTab', { tabId: t.id }, { required: true });
+        } finally {
+          await refresh();
+        }
     };
 
     if (t.protectedTab) btnClose.disabled = true;
@@ -114,50 +192,73 @@ async function refresh() {
     list.appendChild(row);
   }
 
-  el('statusLine').textContent = `Tabs: ${tabs.length} • State: ${state.stateDir || ''}`;
+    statusText(`Tabs: ${tabs.length} • State: ${lastState.stateDir || ''}`);
 
   // Settings UI.
-  setNum('setMaxInflight', settings.maxInflightQueries);
-  setNum('setQpm', settings.maxQueriesPerMinute);
-  setNum('setTabGap', settings.minTabGapMs);
-  setNum('setGlobalGap', settings.minGlobalGapMs);
-  setChecked('setShowTabsDefault', settings.showTabsByDefault);
-  setChecked('setAllowAuthPopups', settings.allowAuthPopups !== false);
-  setChecked('setAcknowledge', false);
-  el('btnSaveSettings').disabled = true;
-  el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
+    setNum('setMaxInflight', settings.maxInflightQueries);
+    setNum('setQpm', settings.maxQueriesPerMinute);
+    setNum('setTabGap', settings.minTabGapMs);
+    setNum('setGlobalGap', settings.minGlobalGapMs);
+    setChecked('setShowTabsDefault', settings.showTabsByDefault);
+    setChecked('setAllowAuthPopups', settings.allowAuthPopups !== false);
+    setChecked('setAcknowledge', false);
+    el('btnSaveSettings').disabled = true;
+    el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
 
   // Orchestrator status.
-  const running = Array.isArray(orch?.running) ? orch.running : [];
-  const recent = Array.isArray(orch?.recent) ? orch.recent : [];
-  const statusLine =
-    running.length === 0
-      ? 'No orchestrators running.'
-      : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
-  el('orchStatus').textContent = statusLine;
-  if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
-  else if (recent.length) el('orchWorkspaceHint').textContent = `Last exit: ${recent[0].key} code=${recent[0].exitCode ?? 'null'} signal=${recent[0].signal || 'null'}`;
-  else el('orchWorkspaceHint').textContent = '';
+    const running = Array.isArray(orch?.running) ? orch.running : [];
+    const recent = Array.isArray(orch?.recent) ? orch.recent : [];
+    const orchStatus =
+      running.length === 0
+        ? 'No orchestrators running.'
+        : `Running: ${running.map((r) => `${r.key} (pid ${r.pid})`).join(', ')}`;
+    el('orchStatus').textContent = orchStatus;
+    if (running.length === 1 && running[0].logPath) el('orchWorkspaceHint').textContent = `Log: ${running[0].logPath}`;
+    else if (recent.length) {
+      el('orchWorkspaceHint').textContent = `Last exit: ${recent[0].key} code=${recent[0].exitCode ?? 'null'} signal=${recent[0].signal || 'null'}`;
+    } else {
+      el('orchWorkspaceHint').textContent = '';
+    }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 async function main() {
-  el('btnRefresh').onclick = refresh;
+  if (!window?.agentifyDesktop) {
+    throw new Error('desktop_bridge_unavailable');
+  }
+
+  el('btnRefresh').onclick = () => refresh().catch((e) => statusText(`Refresh failed: ${e?.message || String(e)}`));
   el('btnOpenState').onclick = async () => {
-    await window.agentifyDesktop.openStateDir();
+    try {
+      await callApi('openStateDir', undefined, { required: true });
+      statusText(`Opened state directory: ${lastState.stateDir || ''}`);
+    } catch (e) {
+      statusText(`State failed: ${e?.message || String(e)}`);
+    }
   };
   el('btnShowDefault').onclick = async () => {
-    const st = await window.agentifyDesktop.getState();
-    if (st.defaultTabId) await window.agentifyDesktop.showTab({ tabId: st.defaultTabId });
+    try {
+      const st = await callApi('getState', undefined, { fallback: lastState, required: true });
+      const target = st?.defaultTabId || lastState.defaultTabId || null;
+      if (!target) throw new Error('missing_default_tab');
+      await callApi('showTab', { tabId: target }, { required: true });
+      statusText(`Default tab shown: ${target}`);
+    } catch (e) {
+      statusText(`Show default failed: ${e?.message || String(e)}`);
+    }
   };
 
   el('btnCreate').onclick = async () => {
-    const vendorId = String(el('vendorSelect').value || '').trim();
+    const vendorId = String(el('vendorSelect').value || '').trim() || 'chatgpt';
     const key = String(el('tabKey').value || '').trim() || null;
     const name = String(el('tabName').value || '').trim() || null;
     const show = !!el('tabShow').checked;
     el('createHint').textContent = '';
     try {
-      const out = await window.agentifyDesktop.createTab({ vendorId, key, name, show });
+      const out = await callApi('createTab', { vendorId, key, name, show }, { required: true });
       el('createHint').textContent = `Created tab ${out.tabId || ''}`;
       await refresh();
     } catch (e) {
@@ -178,8 +279,8 @@ async function main() {
       return;
     }
     try {
-      if (workspace) await window.agentifyDesktop.setWorkspaceForKey({ key, workspace });
-      await window.agentifyDesktop.startOrchestrator({ key });
+      if (workspace) await callApi('setWorkspaceForKey', { key, workspace }, { required: true });
+      await callApi('startOrchestrator', { key }, { required: true });
       await orchRefresh();
     } catch (e) {
       el('orchStatus').textContent = `Start failed: ${e?.message || String(e)}`;
@@ -193,7 +294,7 @@ async function main() {
       return;
     }
     try {
-      await window.agentifyDesktop.stopOrchestrator({ key });
+      await callApi('stopOrchestrator', { key }, { required: true });
       await orchRefresh();
     } catch (e) {
       el('orchStatus').textContent = `Stop failed: ${e?.message || String(e)}`;
@@ -202,7 +303,7 @@ async function main() {
 
   el('btnOrchStopAll').onclick = async () => {
     try {
-      await window.agentifyDesktop.stopAllOrchestrators();
+      await callApi('stopAllOrchestrators', undefined, { required: true });
       await orchRefresh();
     } catch (e) {
       el('orchStatus').textContent = `Stop all failed: ${e?.message || String(e)}`;
@@ -235,7 +336,7 @@ async function main() {
     const key = String(el('orchKey').value || '').trim();
     if (!key) return;
     try {
-      const ws = await window.agentifyDesktop.getWorkspaceForKey({ key });
+      const ws = await callApi('getWorkspaceForKey', { key }, { required: true });
       const root = ws?.workspace?.root || '';
       if (root) {
         el('orchWorkspace').value = root;
@@ -254,7 +355,7 @@ async function main() {
   el('btnResetSettings').onclick = async () => {
     el('settingsHint').textContent = '';
     try {
-      await window.agentifyDesktop.setSettings({ reset: true });
+      await callApi('setSettings', { reset: true }, { required: true });
       el('settingsHint').textContent = 'Reset to defaults.';
       await refresh();
     } catch (e) {
@@ -266,23 +367,53 @@ async function main() {
     if (!el('setAcknowledge').checked) return;
     el('settingsHint').textContent = '';
     try {
-      await window.agentifyDesktop.setSettings({
+      const saved = await callApi(
+        'setSettings',
+        {
         maxInflightQueries: num('setMaxInflight', 2),
         maxQueriesPerMinute: num('setQpm', 12),
         minTabGapMs: num('setTabGap', 0),
         minGlobalGapMs: num('setGlobalGap', 0),
         showTabsByDefault: !!el('setShowTabsDefault').checked,
         allowAuthPopups: !!el('setAllowAuthPopups').checked,
-        acknowledge: true
-      });
-      el('settingsHint').textContent = 'Saved.';
-      await refresh();
+          acknowledge: true
+        },
+        { required: true }
+      );
+      el('settingsHint').textContent = `Saved.${saved?.acknowledgedAt ? ` ${saved.acknowledgedAt}` : ''}`;
+      setChecked('setAcknowledge', false);
+      el('btnSaveSettings').disabled = true;
     } catch (e) {
       el('settingsHint').textContent = `Save failed: ${e?.message || String(e)}`;
     }
   };
 
-  window.agentifyDesktop.onTabsChanged(() => refresh().catch(() => {}));
+  if (hasApi('onTabsChanged')) {
+    try {
+      bridge.onTabsChanged(() => refresh().catch(() => {}));
+    } catch (e) {
+      statusText(`Tabs listener unavailable: ${e?.message || String(e)}`);
+      setInterval(() => refresh().catch(() => {}), 3000);
+    }
+  } else {
+    statusText('Tabs listener unavailable (compat mode). Auto-refresh every 3s.');
+    setInterval(() => refresh().catch(() => {}), 3000);
+  }
+
+  const hasOrch =
+    hasApi('getOrchestrators') &&
+    hasApi('startOrchestrator') &&
+    hasApi('stopOrchestrator') &&
+    hasApi('stopAllOrchestrators');
+  if (!hasOrch) {
+    for (const id of ['btnOrchStart', 'btnOrchStop', 'btnOrchStopAll', 'btnOrchRefresh', 'btnOrchCopy', 'orchKey', 'orchWorkspace', 'orchTool']) {
+      try {
+        el(id).disabled = true;
+      } catch {}
+    }
+    el('orchStatus').textContent = 'Orchestrator controls unavailable in this build.';
+  }
+
   await refresh();
 }
 

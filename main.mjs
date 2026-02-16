@@ -297,7 +297,7 @@ async function main() {
 
     const tabId = key
       ? await tabs.ensureTab({ key, name: name || null, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name })
-      : await tabs.createTab({ name: name || null, show: false, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name });
+      : await tabs.createTab({ name: name || null, show, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name });
 
     if (show) {
       const win = tabs.getWindowById(tabId);
