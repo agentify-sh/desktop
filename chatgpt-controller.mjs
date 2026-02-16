@@ -89,11 +89,17 @@ export class ChatGPTController {
         || /log in|sign in|continue with/i.test(bodyText);
 
       const promptVisible = (() => {
-        const el = document.querySelector(${JSON.stringify(this.selectors.promptTextarea)});
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        const style = window.getComputedStyle(el);
-        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        const candidates = Array.from(document.querySelectorAll(${JSON.stringify(this.selectors.promptTextarea)}));
+        const el = candidates.find((n) => {
+          const r = n.getBoundingClientRect();
+          const style = window.getComputedStyle(n);
+          const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+          if (!visible) return false;
+          if (n.matches('textarea')) return !n.disabled && !n.readOnly;
+          if (n.isContentEditable) return true;
+          return true;
+        });
+        return !!el;
       })();
 
       const blocked = hasTurnstile || hasArkose || hasVerifyButton || looks403 || (loginLike && !promptVisible);
@@ -206,7 +212,16 @@ export class ChatGPTController {
   async #typePrompt(prompt) {
     const sel = JSON.stringify(this.selectors.promptTextarea);
     const ok = await this.#eval(`(() => {
-      const el = document.querySelector(${sel});
+      const candidates = Array.from(document.querySelectorAll(${sel}));
+      const el = candidates.find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        if (!visible) return false;
+        if (n.matches('textarea')) return !n.disabled && !n.readOnly;
+        if (n.isContentEditable) return true;
+        return true;
+      }) || candidates[0];
       if (!el) return { ok:false, error:'missing_prompt_textarea' };
       el.focus();
       const r = el.getBoundingClientRect();
@@ -238,10 +253,19 @@ export class ChatGPTController {
     const sendSel = JSON.stringify(this.selectors.sendButton);
     const stopSel = JSON.stringify(this.selectors.stopButton);
     const res = await this.#eval(`(() => {
-      const stop = document.querySelector(${stopSel});
+      const stop = Array.from(document.querySelectorAll(${stopSel})).find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      });
       if (stop) return { ok:false, error:'already_generating' };
-      const btn = document.querySelector(${sendSel});
-      if (!btn) return { ok:false, error:'missing_send_button' };
+      const btn = Array.from(document.querySelectorAll(${sendSel})).find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        if (!(r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none')) return false;
+        return !n.disabled;
+      });
+      if (!btn) return { ok:true, fallbackEnter:true };
       if (btn.disabled) return { ok:false, error:'send_button_disabled' };
       const r = btn.getBoundingClientRect();
       return { ok:true, rect: { x: r.x, y: r.y, w: r.width, h: r.height } };
@@ -250,6 +274,12 @@ export class ChatGPTController {
       const err = new Error(res?.error || 'send_failed');
       err.data = res;
       throw err;
+    }
+
+    if (res?.fallbackEnter) {
+      await sleep(jitter(30, 90));
+      await this.#sendKey('Enter');
+      return;
     }
 
     if (res?.rect?.w > 0 && res?.rect?.h > 0) {
@@ -338,15 +368,20 @@ export class ChatGPTController {
     while (Date.now() - start < timeoutMs) {
       const snap = await this.#eval(`(() => {
         const stop = !!document.querySelector(${stopSel});
-        const send = document.querySelector(${sendSel});
-        const sendEnabled = !!send && !send.disabled;
+        const send = Array.from(document.querySelectorAll(${sendSel})).find((n) => {
+          const r = n.getBoundingClientRect();
+          const style = window.getComputedStyle(n);
+          return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        });
+        const sendEnabled = send ? !send.disabled : true;
         const nodes = Array.from(document.querySelectorAll(${assistantSel}));
         const lastNode = nodes[nodes.length - 1];
-        const txt = (lastNode?.innerText || '').trim();
+        const fallbackMainText = ((document.querySelector('main') || document.body)?.innerText || '').trim();
+        const txt = (lastNode?.innerText || fallbackMainText).trim();
         const hasContinue = Array.from(document.querySelectorAll('button, a')).some(b => /continue generating/i.test((b.textContent||'').trim()));
         const hasRegenerate = Array.from(document.querySelectorAll('button, a')).some(b => /regenerate/i.test((b.textContent||'').trim()));
         const hasError = /something went wrong|try again|error/i.test(txt) && txt.length < 500;
-        return { stop, sendEnabled, txt, count: nodes.length, hasError, hasContinue, hasRegenerate };
+        return { stop, sendEnabled, txt, count: nodes.length, usedFallback: !lastNode, hasError, hasContinue, hasRegenerate };
       })()`);
 
       const txt = String(snap?.txt || '');
@@ -372,7 +407,9 @@ export class ChatGPTController {
         continue;
       }
 
-      const done = !snap?.stop && stopGoneLongEnough && snap?.sendEnabled && stable && txt.length > 0;
+      const readyByNodes = (snap?.count || 0) > 0;
+      const fallbackWaited = !!snap?.usedFallback && (Date.now() - start >= 2500);
+      const done = !snap?.stop && stopGoneLongEnough && snap?.sendEnabled && stable && txt.length > 0 && (readyByNodes || fallbackWaited);
       if (done) {
         const extra = await this.#eval(`(() => {
           const nodes = Array.from(document.querySelectorAll(${assistantSel}));
