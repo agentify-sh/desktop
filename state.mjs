@@ -36,6 +36,7 @@ export function defaultSettings() {
 
     // UX defaults.
     showTabsByDefault: false,
+    allowAuthPopups: true,
 
     // Acknowledgment for changing settings (UX only; not required for operation).
     acknowledgedAt: null
@@ -61,6 +62,7 @@ export function normalizeSettings(input) {
     minTabGapMs: clampMs(s.minTabGapMs, { min: 0, max: 60_000, fallback: d.minTabGapMs }),
     minGlobalGapMs: clampMs(s.minGlobalGapMs, { min: 0, max: 10_000, fallback: d.minGlobalGapMs }),
     showTabsByDefault: !!s.showTabsByDefault,
+    allowAuthPopups: typeof s.allowAuthPopups === 'boolean' ? s.allowAuthPopups : d.allowAuthPopups,
     acknowledgedAt: typeof s.acknowledgedAt === 'string' && s.acknowledgedAt.trim() ? s.acknowledgedAt.trim() : null
   };
   return out;
