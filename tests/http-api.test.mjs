@@ -336,6 +336,40 @@ test('http-api: operations run through controller.runExclusive when available', 
   assert.deepEqual(calls, ['navigate', 'ensureReady', 'query', 'readPageText', 'downloadLastAssistantImages']);
 });
 
+test('http-api: ensure-ready timeout maps to 408 with details', async (t) => {
+  const controller = {
+    runExclusive: async (fn) => await fn(),
+    ensureReady: async () => {
+      const err = new Error('timeout_waiting_for_prompt');
+      err.data = { kind: 'login' };
+      throw err;
+    }
+  };
+  const tabs = {
+    listTabs: () => [{ id: 't0', key: 'default' }],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => controller
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r = await req({ port, token: 'secret', method: 'POST', pth: '/ensure-ready', body: { timeoutMs: 1000 } });
+  assert.equal(r.res.status, 408);
+  assert.equal(r.data.error, 'timeout_waiting_for_prompt');
+  assert.deepEqual(r.data.data, { kind: 'login' });
+});
+
 test('http-api: query returns 429 when maxInflightQueries exceeded', async (t) => {
   let started = 0;
   let release;

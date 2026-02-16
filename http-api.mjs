@@ -55,6 +55,8 @@ function mapErrorToHttp(error) {
   if (msg === 'default_tab_protected') return { code: 409, body: { error: 'default_tab_protected' } };
   if (msg === 'max_tabs_reached') return { code: 409, body: { error: 'max_tabs_reached' } };
   if (msg === 'rate_limited') return { code: 429, body: { error: 'rate_limited', ...(error?.data || {}) } };
+  if (msg === 'timeout_waiting_for_prompt') return { code: 408, body: { error: 'timeout_waiting_for_prompt', data: error?.data || null } };
+  if (msg === 'timeout_waiting_for_response') return { code: 408, body: { error: 'timeout_waiting_for_response', data: error?.data || null } };
   return null;
 }
 

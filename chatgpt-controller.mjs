@@ -63,8 +63,23 @@ export class ChatGPTController {
 
   async readPageText({ maxChars = 200_000 } = {}) {
     const text = await this.#eval(`(() => {
-      const el = document.querySelector('main') || document.body;
-      return (el?.innerText || document.body?.innerText || '').slice(0, ${maxChars});
+      const cap = ${maxChars};
+      const clean = (s) => String(s || '').replace(/\\u0000/g, '').replace(/\\s+\\n/g, '\\n').trim();
+      const root = document.querySelector('main') || document.body || document.documentElement;
+
+      let txt = clean(root?.innerText) || clean(document.body?.innerText) || clean(document.documentElement?.innerText);
+      if (!txt) txt = clean(root?.textContent) || clean(document.body?.textContent) || clean(document.documentElement?.textContent);
+
+      // Last fallback for heavily client-rendered/shell pages where innerText may be empty pre-hydration.
+      if (!txt) {
+        const hints = Array.from(document.querySelectorAll('button, a, input, textarea, [role=\"button\"], [aria-label], [placeholder]'))
+          .slice(0, 400)
+          .map((n) => [n.getAttribute('aria-label'), n.getAttribute('placeholder'), n.textContent].filter(Boolean).join(' ').trim())
+          .filter(Boolean);
+        txt = clean(hints.join('\\n'));
+      }
+
+      return txt.slice(0, cap);
     })()`);
     return String(text || '');
   }
@@ -118,14 +133,7 @@ export class ChatGPTController {
 
   async waitForPromptVisible({ timeoutMs = 10 * 60_000, pollMs = 500 } = {}) {
     const start = Date.now();
-    let activeElapsed = 0;
-    let lastTick = Date.now();
-    while (activeElapsed < timeoutMs) {
-      const now = Date.now();
-      const delta = now - lastTick;
-      lastTick = now;
-      if (!this.blocked) activeElapsed += delta;
-
+    while (Date.now() - start < timeoutMs) {
       const st = await this.detectChallenge().catch(() => null);
       if (st?.blocked) await this.#enterBlockedState(st);
       if (st?.promptVisible) return st;
