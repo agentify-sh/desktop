@@ -130,6 +130,14 @@ input::placeholder { color: rgba(233,236,242,0.45); }
 }
 .btn.primary:hover { background: rgba(37,99,235,0.32); }
 .btn.secondary { opacity: 0.92; }
+.iconBtn {
+  min-width: 38px;
+  width: 38px;
+  padding: 9px 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+}
 
 .tabs { display: flex; flex-direction: column; gap: 8px; }
 .empty { color: rgba(233,236,242,0.6); padding: 8px 0; }
