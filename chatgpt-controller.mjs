@@ -104,17 +104,61 @@ export class ChatGPTController {
         || /log in|sign in|continue with/i.test(bodyText);
 
       const promptVisible = (() => {
-        const candidates = Array.from(document.querySelectorAll(${JSON.stringify(this.selectors.promptTextarea)}));
-        const el = candidates.find((n) => {
-          const r = n.getBoundingClientRect();
-          const style = window.getComputedStyle(n);
-          const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-          if (!visible) return false;
-          if (n.matches('textarea')) return !n.disabled && !n.readOnly;
-          if (n.isContentEditable) return true;
-          return true;
-        });
-        return !!el;
+        const pickPrompt = (nodes) => {
+          const visible = (n) => {
+            const r = n.getBoundingClientRect();
+            const style = window.getComputedStyle(n);
+            return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+          };
+          const editable = (n) => {
+            if (!n) return false;
+            if (!visible(n)) return false;
+            if (n.matches('textarea')) return !n.disabled && !n.readOnly;
+            if (n.matches('input')) return !n.disabled && !n.readOnly && !/password|search|email|url|number|tel/i.test(String(n.type || 'text'));
+            return !!n.isContentEditable || n.getAttribute('contenteditable') === 'true' || n.getAttribute('role') === 'textbox';
+          };
+          const score = (n) => {
+            const r = n.getBoundingClientRect();
+            const label = [
+              n.getAttribute('aria-label') || '',
+              n.getAttribute('placeholder') || '',
+              n.getAttribute('name') || '',
+              n.getAttribute('id') || '',
+              n.getAttribute('data-testid') || ''
+            ].join(' ').toLowerCase();
+            let s = 0;
+            if (/prompt|message|ask|chat|query|input/.test(label)) s += 80;
+            if (n.matches('textarea')) s += 50;
+            if (n.isContentEditable || n.getAttribute('contenteditable') === 'true') s += 35;
+            if (n.getAttribute('role') === 'textbox') s += 25;
+            if (r.width >= 260 && r.height >= 26) s += 20;
+            s += Math.min(180, Math.max(0, (r.width * r.height) / 2500));
+            s += Math.max(0, r.y / 8);
+            return s;
+          };
+          let best = null;
+          let bestScore = -Infinity;
+          for (const n of nodes) {
+            if (!editable(n)) continue;
+            const s = score(n);
+            if (s > bestScore) {
+              bestScore = s;
+              best = n;
+            }
+          }
+          return best;
+        };
+
+        const base = Array.from(document.querySelectorAll(${JSON.stringify(this.selectors.promptTextarea)}));
+        const fallback = Array.from(document.querySelectorAll('main textarea, main [role=\"textbox\"], main [contenteditable=\"true\"], textarea, [role=\"textbox\"], [contenteditable=\"true\"]'));
+        const uniq = [];
+        const seen = new Set();
+        for (const n of [...base, ...fallback]) {
+          if (!n || seen.has(n)) continue;
+          seen.add(n);
+          uniq.push(n);
+        }
+        return !!pickPrompt(uniq);
       })();
 
       const blocked = hasTurnstile || hasArkose || hasVerifyButton || looks403 || (loginLike && !promptVisible);
@@ -220,16 +264,56 @@ export class ChatGPTController {
   async #typePrompt(prompt) {
     const sel = JSON.stringify(this.selectors.promptTextarea);
     const ok = await this.#eval(`(() => {
-      const candidates = Array.from(document.querySelectorAll(${sel}));
-      const el = candidates.find((n) => {
+      const visible = (n) => {
         const r = n.getBoundingClientRect();
         const style = window.getComputedStyle(n);
-        const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-        if (!visible) return false;
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const editable = (n) => {
+        if (!n) return false;
+        if (!visible(n)) return false;
         if (n.matches('textarea')) return !n.disabled && !n.readOnly;
-        if (n.isContentEditable) return true;
-        return true;
-      }) || candidates[0];
+        if (n.matches('input')) return !n.disabled && !n.readOnly && !/password|search|email|url|number|tel/i.test(String(n.type || 'text'));
+        return !!n.isContentEditable || n.getAttribute('contenteditable') === 'true' || n.getAttribute('role') === 'textbox';
+      };
+      const score = (n) => {
+        const r = n.getBoundingClientRect();
+        const label = [
+          n.getAttribute('aria-label') || '',
+          n.getAttribute('placeholder') || '',
+          n.getAttribute('name') || '',
+          n.getAttribute('id') || '',
+          n.getAttribute('data-testid') || ''
+        ].join(' ').toLowerCase();
+        let s = 0;
+        if (/prompt|message|ask|chat|query|input/.test(label)) s += 80;
+        if (n.matches('textarea')) s += 50;
+        if (n.isContentEditable || n.getAttribute('contenteditable') === 'true') s += 35;
+        if (n.getAttribute('role') === 'textbox') s += 25;
+        if (r.width >= 260 && r.height >= 26) s += 20;
+        s += Math.min(180, Math.max(0, (r.width * r.height) / 2500));
+        s += Math.max(0, r.y / 8); // lower on page is more likely the composer
+        return s;
+      };
+      const base = Array.from(document.querySelectorAll(${sel}));
+      const fallback = Array.from(document.querySelectorAll('main textarea, main [role=\"textbox\"], main [contenteditable=\"true\"], textarea, [role=\"textbox\"], [contenteditable=\"true\"]'));
+      const candidates = [];
+      const seen = new Set();
+      for (const n of [...base, ...fallback]) {
+        if (!n || seen.has(n)) continue;
+        seen.add(n);
+        candidates.push(n);
+      }
+      let el = null;
+      let best = -Infinity;
+      for (const n of candidates) {
+        if (!editable(n)) continue;
+        const s = score(n);
+        if (s > best) {
+          best = s;
+          el = n;
+        }
+      }
       if (!el) return { ok:false, error:'missing_prompt_textarea' };
       el.focus();
       const r = el.getBoundingClientRect();
@@ -257,6 +341,53 @@ export class ChatGPTController {
     await this.#typeHuman(prompt);
   }
 
+  async #waitForSendSignal({ timeoutMs = 1800, pollMs = 120 } = {}) {
+    const stopSel = JSON.stringify(this.selectors.stopButton);
+    const sendSel = JSON.stringify(this.selectors.sendButton);
+    const promptSel = JSON.stringify(this.selectors.promptTextarea);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const snap = await this.#eval(`(() => {
+        const visible = (n) => {
+          if (!n) return false;
+          const r = n.getBoundingClientRect();
+          const style = window.getComputedStyle(n);
+          return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        };
+        const stopVisible = Array.from(document.querySelectorAll(${stopSel})).some(visible);
+        const send = Array.from(document.querySelectorAll(${sendSel})).find(visible);
+        const sendDisabled = !!send && !!send.disabled;
+
+        const promptCandidates = Array.from(document.querySelectorAll(${promptSel}));
+        const fallback = Array.from(document.querySelectorAll('main textarea, main [role=\"textbox\"], main [contenteditable=\"true\"], textarea, [role=\"textbox\"], [contenteditable=\"true\"]'));
+        const uniq = [];
+        const seen = new Set();
+        for (const n of [...promptCandidates, ...fallback]) {
+          if (!n || seen.has(n)) continue;
+          seen.add(n);
+          uniq.push(n);
+        }
+        let promptLen = -1;
+        for (const n of uniq) {
+          if (!visible(n)) continue;
+          if (n.matches('textarea, input')) {
+            promptLen = String(n.value || '').trim().length;
+            break;
+          }
+          if (n.isContentEditable || n.getAttribute('contenteditable') === 'true' || n.getAttribute('role') === 'textbox') {
+            promptLen = String(n.innerText || n.textContent || '').trim().length;
+            break;
+          }
+        }
+        return { stopVisible, sendDisabled, promptLen };
+      })()`);
+
+      if (snap?.stopVisible || snap?.sendDisabled || snap?.promptLen === 0) return true;
+      await sleep(pollMs);
+    }
+    return false;
+  }
+
   async #clickSend() {
     const sendSel = JSON.stringify(this.selectors.sendButton);
     const stopSel = JSON.stringify(this.selectors.stopButton);
@@ -267,16 +398,56 @@ export class ChatGPTController {
         return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
       });
       if (stop) return { ok:false, error:'already_generating' };
-      const btn = Array.from(document.querySelectorAll(${sendSel})).find((n) => {
+      const host = location.hostname || '';
+      const visible = (n) => {
         const r = n.getBoundingClientRect();
         const style = window.getComputedStyle(n);
-        if (!(r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none')) return false;
-        return !n.disabled;
-      });
-      if (!btn) return { ok:true, fallbackEnter:true };
-      if (btn.disabled) return { ok:false, error:'send_button_disabled' };
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const disabled = (n) => !!n.disabled || String(n.getAttribute('aria-disabled') || '').toLowerCase() === 'true';
+      const labelOf = (n) =>
+        [
+          n.getAttribute('aria-label') || '',
+          n.getAttribute('title') || '',
+          n.getAttribute('data-testid') || '',
+          n.textContent || ''
+        ]
+          .join(' ')
+          .replace(/\\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+      const score = (n) => {
+        const r = n.getBoundingClientRect();
+        const label = labelOf(n);
+        let s = 0;
+        if (n.matches(${sendSel})) s += 120;
+        if (/send|submit|run|go|ask|reply/.test(label)) s += 90;
+        if (/stop|cancel|retry|signin|sign in|log in|google/.test(label)) s -= 140;
+        if (r.width >= 16 && r.height >= 16) s += 10;
+        s += Math.max(0, r.y / 10);
+        s += Math.max(0, r.x / 20);
+        return s;
+      };
+      const pool = [];
+      const seen = new Set();
+      for (const n of [...document.querySelectorAll(${sendSel}), ...document.querySelectorAll('button, [role=\"button\"]')]) {
+        if (!n || seen.has(n)) continue;
+        seen.add(n);
+        pool.push(n);
+      }
+      let btn = null;
+      let best = -Infinity;
+      for (const n of pool) {
+        if (!visible(n) || disabled(n)) continue;
+        const s = score(n);
+        if (s > best) {
+          best = s;
+          btn = n;
+        }
+      }
+      if (!btn) return { ok:true, fallbackEnter:true, host };
       const r = btn.getBoundingClientRect();
-      return { ok:true, rect: { x: r.x, y: r.y, w: r.width, h: r.height } };
+      return { ok:true, rect: { x: r.x, y: r.y, w: r.width, h: r.height }, host };
     })()`);
     if (!res?.ok) {
       const err = new Error(res?.error || 'send_failed');
@@ -284,21 +455,49 @@ export class ChatGPTController {
       throw err;
     }
 
-    if (res?.fallbackEnter) {
-      await sleep(jitter(30, 90));
-      await this.#sendKey('Enter');
-      return;
-    }
-
+    let sent = false;
     if (res?.rect?.w > 0 && res?.rect?.h > 0) {
       const cx = Math.round(res.rect.x + res.rect.w / 2);
       const cy = Math.round(res.rect.y + res.rect.h / 2);
       await this.#clickAt(cx, cy);
-      return;
+      sent = await this.#waitForSendSignal({ timeoutMs: 2200, pollMs: 120 });
     }
 
-    // Fallback
-    await this.#eval(`(() => { const btn = document.querySelector(${sendSel}); if (btn) btn.click(); })()`);
+    if (!sent && !res?.fallbackEnter) {
+      await this.#eval(`(() => { const btn = document.querySelector(${sendSel}); if (btn) btn.click(); })()`);
+      sent = await this.#waitForSendSignal({ timeoutMs: 1400, pollMs: 120 });
+    }
+
+    if (!sent) {
+      const host = String(res?.host || '');
+      const isMac = process.platform === 'darwin';
+      const combos = [];
+      if (host.includes('aistudio.google.com')) {
+        combos.push(['Enter', ['alt']]);
+        combos.push(['Enter', [isMac ? 'meta' : 'control']]);
+        combos.push(['Enter', []]);
+      } else if (host.includes('grok.com')) {
+        combos.push(['Enter', [isMac ? 'meta' : 'control']]);
+        combos.push(['Enter', []]);
+      } else {
+        combos.push(['Enter', []]);
+        combos.push(['Enter', [isMac ? 'meta' : 'control']]);
+        combos.push(['Enter', ['alt']]);
+      }
+
+      for (const [key, modifiers] of combos) {
+        await sleep(jitter(25, 90));
+        await this.#sendKey(key, { modifiers });
+        sent = await this.#waitForSendSignal({ timeoutMs: 1500, pollMs: 120 });
+        if (sent) break;
+      }
+    }
+
+    if (!sent) {
+      const err = new Error('send_not_triggered');
+      err.data = { host: res?.host || null };
+      throw err;
+    }
   }
 
   async #attachFiles(files) {
@@ -398,7 +597,10 @@ export class ChatGPTController {
         lastChange = Date.now();
       }
 
-      if (snap?.stop) stopGoneAt = null;
+      // Some providers expose unrelated visible "stop/cancel" controls.
+      // Treat "generating" as stop-visible only when send is not enabled.
+      const generating = !!snap?.stop && !snap?.sendEnabled;
+      if (generating) stopGoneAt = null;
       else if (stopGoneAt == null) stopGoneAt = Date.now();
 
       const dynamicStableMs = Math.max(stableMs, txt.length > 8000 ? 3000 : txt.length > 2000 ? 2200 : stableMs);
@@ -417,7 +619,7 @@ export class ChatGPTController {
 
       const readyByNodes = (snap?.count || 0) > 0;
       const fallbackWaited = !!snap?.usedFallback && (Date.now() - start >= 2500);
-      const done = !snap?.stop && stopGoneLongEnough && snap?.sendEnabled && stable && txt.length > 0 && (readyByNodes || fallbackWaited);
+      const done = !generating && stopGoneLongEnough && snap?.sendEnabled && stable && txt.length > 0 && (readyByNodes || fallbackWaited);
       if (done) {
         const extra = await this.#eval(`(() => {
           const nodes = Array.from(document.querySelectorAll(${assistantSel}));
