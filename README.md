@@ -1,12 +1,12 @@
 # Agentify Desktop
 
-Agentify Desktop is a local-first desktop app that lets AI coding tools drive your existing web subscriptions (starting with ChatGPT) through a real, logged-in browser session on your machine.
+Agentify Desktop is a local-first control center for AI work: connect your real, logged-in AI subscriptions to your MCP-compatible CLI tools, all on your own machine.
 
-It exposes an MCP server so tools like Codex can:
-- Send prompts to the web UI and read back the response
-- Run multiple parallel jobs via separate “tabs” (separate windows; shared login session by default)
-- Upload local files (best-effort; depends on the target site UI)
-- Download generated images (best-effort; supports `<img>` and `canvas` render paths)
+### Why teams keep it open
+- `🌐` **Real browser sessions, real accounts**: automate the web UIs you already use, without API-key migration.
+- `🔌` **MCP-native integration**: works with Codex, Claude Code, OpenCode, and other MCP-capable clients.
+- `🧵` **Parallel tabs for parallel work**: run multiple isolated workflows at once using stable tab keys.
+- `📎` **Practical I/O support**: upload files and download generated images from assistant responses.
 
 ## Supported sites
 **Supported**
