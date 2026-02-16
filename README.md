@@ -137,6 +137,22 @@ If you already had your client open, restart it (or start a new session) so it r
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
 
+## Natural language usage (recommended)
+You can usually use Agentify naturally without naming tool IDs. Ask your MCP client what you want done, and it can map your request to the right `agentify_*` tools.
+
+Examples you can copy-paste:
+```text
+Open a Claude tab with key "incident-prod-api" and make sure it is ready for input.
+
+Send this prompt in that tab and attach ./incident/error.log and ./incident/dashboard.png.
+
+Read the latest response from key "incident-prod-api" and summarize the top 5 action items.
+
+Create a Perplexity tab with key "research-llm-pricing", ask for 2026 pricing comparisons, then return a concise table.
+```
+
+Use explicit tool calls (`agentify_query`, `agentify_read_page`, etc.) when you need deterministic/reproducible runs or when debugging tool selection.
+
 ## Real-world prompt example
 Example `agentify_query` input:
 ```json
