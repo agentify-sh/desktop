@@ -16,7 +16,7 @@
       "id": "claude",
       "name": "Claude",
       "url": "https://claude.ai/",
-      "status": "planned"
+      "status": "supported"
     },
     {
       "id": "grok",
