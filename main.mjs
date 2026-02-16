@@ -143,7 +143,7 @@ async function main() {
       show: !startMinimized,
       title: 'Agentify Desktop',
       webPreferences: {
-        sandbox: true,
+        sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
         preload: path.join(__dirname, 'ui', 'preload.mjs')
@@ -217,8 +217,6 @@ async function main() {
     } catch {}
   };
   if (pendingSecondInstanceFocus) focusDefaultTab();
-
-  await showControlCenter().catch(() => {});
 
   const buildMenu = () => {
     const template = [
@@ -427,6 +425,10 @@ async function main() {
     }
     return { ok: true };
   });
+
+  // Launch control center only after IPC handlers are registered,
+  // otherwise early renderer calls can race and fail with missing handlers.
+  await showControlCenter().catch(() => {});
 
   let server = null;
   let port = basePort;
