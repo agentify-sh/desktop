@@ -57,50 +57,6 @@
         </section>
 
         <section class="card">
-          <div class="cardTitle">Orchestrator (single-chat emulator) <span class="badge warn">EXPERIMENTAL / UNTESTED</span></div>
-          <div class="hint">
-            This surface is currently experimental and not part of the stable smoke-tested path. Use with caution.
-          </div>
-          <div class="hint">
-            Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
-          </div>
-          <div class="grid">
-            <label class="field">
-              <div class="label">Project key</div>
-              <input id="orchKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
-            </label>
-            <label class="field">
-              <div class="label">Workspace path (optional)</div>
-              <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
-            </label>
-            <label class="field">
-              <div class="label">Tool template</div>
-              <select id="orchTool">
-                <option value="codex.run">codex.run</option>
-                <option value="git.diff">git.diff</option>
-                <option value="tests.run">tests.run</option>
-                <option value="fs.read">fs.read</option>
-              </select>
-            </label>
-          </div>
-          <div class="row">
-            <div class="btnRow">
-              <button id="btnOrchStart" class="btn primary">Start</button>
-              <button id="btnOrchStop" class="btn secondary">Stop</button>
-            </div>
-            <div class="btnRow">
-              <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
-              <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
-            </div>
-          </div>
-          <div class="row">
-            <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
-          </div>
-          <div id="orchStatus" class="hint"></div>
-          <div id="orchWorkspaceHint" class="hint"></div>
-        </section>
-
-        <section class="card">
           <div class="cardTitle">Settings (governor)</div>
           <div class="hint">
             These defaults exist to reduce accidental high-rate automation. Automating web UIs may violate website terms; use responsibly.
@@ -156,6 +112,50 @@
           <div class="hint">
             Use stable <span class="mono">key</span> values (e.g. project names) to keep parallel jobs isolated.
           </div>
+        </section>
+
+        <section class="card">
+          <div class="cardTitle">Orchestrator (single-chat emulator) <span class="badge warn">EXPERIMENTAL / UNTESTED</span></div>
+          <div class="hint">
+            This surface is currently experimental and not part of the stable smoke-tested path. Use with caution.
+          </div>
+          <div class="hint">
+            Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
+          </div>
+          <div class="grid">
+            <label class="field">
+              <div class="label">Project key</div>
+              <input id="orchKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Workspace path (optional)</div>
+              <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Tool template</div>
+              <select id="orchTool">
+                <option value="codex.run">codex.run</option>
+                <option value="git.diff">git.diff</option>
+                <option value="tests.run">tests.run</option>
+                <option value="fs.read">fs.read</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <div class="btnRow">
+              <button id="btnOrchStart" class="btn primary">Start</button>
+              <button id="btnOrchStop" class="btn secondary">Stop</button>
+            </div>
+            <div class="btnRow">
+              <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
+              <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
+            </div>
+          </div>
+          <div class="row">
+            <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
+          </div>
+          <div id="orchStatus" class="hint"></div>
+          <div id="orchWorkspaceHint" class="hint"></div>
         </section>
       </main>
 

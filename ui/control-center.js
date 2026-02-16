@@ -38,7 +38,9 @@ function uuidv4() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-const bridge = window?.agentifyDesktop || {};
+function getBridge() {
+  return window?.agentifyDesktop || null;
+}
 const fallbackVendors = [
   { id: 'chatgpt', name: 'ChatGPT', status: 'supported' },
   { id: 'perplexity', name: 'Perplexity', status: 'supported' },
@@ -49,17 +51,19 @@ const fallbackVendors = [
 ];
 
 function hasApi(name) {
-  return typeof bridge?.[name] === 'function';
+  const b = getBridge();
+  return typeof b?.[name] === 'function';
 }
 
 async function callApi(name, args, { fallback = null, required = false } = {}) {
-  if (!hasApi(name)) {
+  const b = getBridge();
+  if (typeof b?.[name] !== 'function') {
     if (required) throw new Error(`missing_desktop_api:${name}`);
     return fallback;
   }
   try {
-    if (typeof args === 'undefined') return await bridge[name]();
-    return await bridge[name](args);
+    if (typeof args === 'undefined') return await b[name]();
+    return await b[name](args);
   } catch (e) {
     if (required) throw e;
     return fallback;
@@ -226,8 +230,8 @@ async function refresh() {
 }
 
 async function main() {
-  if (!window?.agentifyDesktop) {
-    throw new Error('desktop_bridge_unavailable');
+  if (!getBridge()) {
+    statusText('Control Center starting (waiting for desktop bridge)…');
   }
 
   el('btnRefresh').onclick = () => refresh().catch((e) => statusText(`Refresh failed: ${e?.message || String(e)}`));
@@ -390,7 +394,8 @@ async function main() {
 
   if (hasApi('onTabsChanged')) {
     try {
-      bridge.onTabsChanged(() => refresh().catch(() => {}));
+      const b = getBridge();
+      b?.onTabsChanged?.(() => refresh().catch(() => {}));
     } catch (e) {
       statusText(`Tabs listener unavailable: ${e?.message || String(e)}`);
       setInterval(() => refresh().catch(() => {}), 3000);
