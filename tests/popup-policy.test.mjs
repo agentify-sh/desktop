@@ -15,6 +15,10 @@ test('popup-policy: allows Google auth popup URL for perplexity vendor', () => {
   assert.equal(isAllowedAuthPopupUrl('https://accounts.google.com/signin/v2/identifier', { vendorId: 'perplexity' }), true);
 });
 
+test('popup-policy: allows Google auth popup URL for claude vendor', () => {
+  assert.equal(isAllowedAuthPopupUrl('https://accounts.google.com/signin/v2/identifier', { vendorId: 'claude' }), true);
+});
+
 test('popup-policy: blocks non-https popup URL', () => {
   assert.equal(isAllowedAuthPopupUrl('http://accounts.google.com/signin/v2/identifier', { vendorId: 'chatgpt' }), false);
 });
