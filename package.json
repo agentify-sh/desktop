@@ -12,12 +12,15 @@
     "dist": "electron-builder"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "electron": "^39.2.7",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "electron": "^39.6.0",
     "zod": "^3.22.3"
   },
   "devDependencies": {
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.7.0"
+  },
+  "overrides": {
+    "hono": "^4.11.7"
   },
   "build": {
     "appId": "com.agentify.desktop",

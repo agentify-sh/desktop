@@ -12,11 +12,13 @@ It exposes an MCP server so tools like Codex can:
 **Supported**
 - `chatgpt.com`
 - `perplexity.ai` (best-effort selectors)
+- `claude.ai` (best-effort selectors)
+- `aistudio.google.com/prompts/new_chat` (best-effort selectors)
+- `gemini.google.com` (best-effort selectors)
+- `grok.com` (best-effort selectors)
 
 **Planned**
-- `claude.ai`
-- `grok.com`
-- `aistudio.google.com`
+- Additional vendor profiles via `vendors.json` + selector overrides.
 
 ## CAPTCHA policy (human-in-the-loop)
 Agentify Desktop does **not** attempt to bypass CAPTCHAs or use third-party solvers. If a human verification appears, the app pauses automation, brings the relevant window to the front, and waits for you to complete the check manually.
@@ -52,11 +54,11 @@ npm run start
 
 The Agentify Control Center opens. Use it to:
 - Show/hide tabs (each tab is a separate window)
-- Create tabs for different vendors (ChatGPT supported; others planned)
+- Create tabs for ChatGPT, Perplexity, Claude, Google AI Studio, Gemini, and Grok
 - Tune automation safety limits (governor)
 - Manage the optional “single-chat emulator” orchestrator
 
-Sign in to ChatGPT in the tab window.
+Sign in to your target vendor in the tab window.
 
 If your account uses SSO (Google/Microsoft/Apple), keep **Settings → Allow auth popups** enabled in the Control Center. ChatGPT login often opens provider auth in a popup, and blocking popups can prevent login from completing.
 
@@ -79,11 +81,17 @@ codex mcp list
 If you already had Codex open, restart it (or start a new session) so it reloads MCP server config.
 
 ## How to use (practical)
-- **Use ChatGPT/Perplexity normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
-- **Drive ChatGPT/Perplexity from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Use ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
+
+## What's new
+- First-class multi-vendor tab support now includes Perplexity, Claude, Google AI Studio, Gemini, and Grok.
+- Control Center reliability and UX were hardened (state/refresh wiring, tab actions, compact controls, clearer field guidance).
+- Local API hardening includes strict invalid JSON handling, key/vendor mismatch protection, and safer tab-key recovery.
+- Desktop runtime hardening includes Control Center sandboxing plus dependency security updates.
 
 ## Governor (anti-spam)
 Agentify Desktop includes a built-in governor to reduce accidental high-rate automation:
@@ -131,6 +139,7 @@ Agentify Desktop can optionally run a local “orchestrator” that watches a Ch
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
 - **Perplexity selectors:** Perplexity support is best-effort and may require selector overrides in `~/.agentify-desktop/selectors.override.json` if UI changes.
+- **Gemini selectors:** Gemini support is best-effort and may require selector overrides in `~/.agentify-desktop/selectors.override.json` if UI changes.
 - **Completion detection:** waiting for “stop generating” to disappear + text stability works well, but can mis-detect on very long outputs or intermittent streaming pauses.
 - **Image downloads:** prefers `<img>` elements in the latest assistant message; some UI modes may render images via nonstandard elements.
 - **Parallelism model:** “tabs” are separate windows; they can run in parallel without stealing focus unless a human check is required.
