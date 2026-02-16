@@ -26,18 +26,24 @@
       <main class="main">
         <section class="card">
           <div class="cardTitle">Create tab</div>
+          <div class="hint">
+            `Vendor` chooses the website, `Key` reuses the same tab for that project across calls, and `Name` is just a label shown in the tab list.
+          </div>
           <div class="grid">
             <label class="field">
               <div class="label">Vendor</div>
               <select id="vendorSelect"></select>
+              <div class="fieldHelp">Pick where this tab should open (ChatGPT, Claude, etc.).</div>
             </label>
             <label class="field">
               <div class="label">Key (optional)</div>
               <input id="tabKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+              <div class="fieldHelp">Stable routing key. Same key means the same tab is reused.</div>
             </label>
             <label class="field">
               <div class="label">Name (optional)</div>
               <input id="tabName" type="text" placeholder="e.g. billing-bot" autocomplete="off" />
+              <div class="fieldHelp">Human-friendly label only. Does not affect routing.</div>
             </label>
           </div>
           <div class="row">
@@ -52,7 +58,7 @@
 
         <section class="card">
           <div class="cardTitle">Tabs</div>
-          <div id="tabsEmpty" class="empty">No tabs.</div>
+          <div id="tabsEmpty" class="empty">No tabs listed yet. Click Refresh or Show default to reveal the default tab.</div>
           <div id="tabsList" class="tabs"></div>
         </section>
 
@@ -145,14 +151,12 @@
             <div class="btnRow">
               <button id="btnOrchStart" class="btn primary">Start</button>
               <button id="btnOrchStop" class="btn secondary">Stop</button>
+              <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
             </div>
             <div class="btnRow">
               <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
               <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
             </div>
-          </div>
-          <div class="row">
-            <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
           </div>
           <div id="orchStatus" class="hint"></div>
           <div id="orchWorkspaceHint" class="hint"></div>
