@@ -43,8 +43,9 @@ export function isAllowedAuthPopupUrl(url, { vendorId = 'chatgpt' } = {}) {
   const host = normalizeHostname(u.hostname);
   if (!host) return false;
 
-  // v0.1 supports ChatGPT. Keep behavior conservative for other vendors.
-  if (String(vendorId || 'chatgpt') !== 'chatgpt') return false;
+  // Keep behavior conservative: allow only vendors where we explicitly support auth popups.
+  const vendor = String(vendorId || 'chatgpt').trim().toLowerCase();
+  if (!['chatgpt', 'gemini'].includes(vendor)) return false;
 
   return CHATGPT_AUTH_HOST_ALLOWLIST.some((pattern) => hostMatchesPattern(host, pattern));
 }
@@ -57,4 +58,3 @@ export function shouldAllowPopup({
   if (!allowAuthPopups) return false;
   return isAllowedAuthPopupUrl(url, { vendorId });
 }
-
