@@ -11,6 +11,7 @@ It exposes an MCP server so tools like Codex can:
 ## Supported sites
 **Supported**
 - `chatgpt.com`
+- `gemini.google.com` (best-effort selectors)
 
 **Planned**
 - `claude.ai`
@@ -78,8 +79,8 @@ codex mcp list
 If you already had Codex open, restart it (or start a new session) so it reloads MCP server config.
 
 ## How to use (practical)
-- **Use ChatGPT normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
-- **Drive ChatGPT from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
+- **Use ChatGPT/Gemini normally (manual):** write a plan/spec in the UI, then in Codex call `agentify_read_page` to pull the transcript into your workflow.
+- **Drive ChatGPT/Gemini from Codex:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
@@ -129,6 +130,7 @@ Agentify Desktop can optionally run a local “orchestrator” that watches a Ch
 
 ## Limitations / robustness notes
 - **File upload selectors:** `input[type=file]` selection is best-effort; if ChatGPT changes the upload flow, update `selectors.json` or `~/.agentify-desktop/selectors.override.json`.
+- **Gemini selectors:** Gemini support uses best-effort DOM selectors; if Google updates the UI, override selectors in `~/.agentify-desktop/selectors.override.json`.
 - **Completion detection:** waiting for “stop generating” to disappear + text stability works well, but can mis-detect on very long outputs or intermittent streaming pauses.
 - **Image downloads:** prefers `<img>` elements in the latest assistant message; some UI modes may render images via nonstandard elements.
 - **Parallelism model:** “tabs” are separate windows; they can run in parallel without stealing focus unless a human check is required.

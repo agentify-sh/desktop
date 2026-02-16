@@ -89,11 +89,17 @@ export class ChatGPTController {
         || /log in|sign in|continue with/i.test(bodyText);
 
       const promptVisible = (() => {
-        const el = document.querySelector(${JSON.stringify(this.selectors.promptTextarea)});
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        const style = window.getComputedStyle(el);
-        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        const candidates = Array.from(document.querySelectorAll(${JSON.stringify(this.selectors.promptTextarea)}));
+        const el = candidates.find((n) => {
+          const r = n.getBoundingClientRect();
+          const style = window.getComputedStyle(n);
+          const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+          if (!visible) return false;
+          if (n.matches('textarea')) return !n.disabled && !n.readOnly;
+          if (n.isContentEditable) return true;
+          return true;
+        });
+        return !!el;
       })();
 
       const blocked = hasTurnstile || hasArkose || hasVerifyButton || looks403 || (loginLike && !promptVisible);
@@ -206,7 +212,16 @@ export class ChatGPTController {
   async #typePrompt(prompt) {
     const sel = JSON.stringify(this.selectors.promptTextarea);
     const ok = await this.#eval(`(() => {
-      const el = document.querySelector(${sel});
+      const candidates = Array.from(document.querySelectorAll(${sel}));
+      const el = candidates.find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        const visible = r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        if (!visible) return false;
+        if (n.matches('textarea')) return !n.disabled && !n.readOnly;
+        if (n.isContentEditable) return true;
+        return true;
+      }) || candidates[0];
       if (!el) return { ok:false, error:'missing_prompt_textarea' };
       el.focus();
       const r = el.getBoundingClientRect();
@@ -238,9 +253,18 @@ export class ChatGPTController {
     const sendSel = JSON.stringify(this.selectors.sendButton);
     const stopSel = JSON.stringify(this.selectors.stopButton);
     const res = await this.#eval(`(() => {
-      const stop = document.querySelector(${stopSel});
+      const stop = Array.from(document.querySelectorAll(${stopSel})).find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      });
       if (stop) return { ok:false, error:'already_generating' };
-      const btn = document.querySelector(${sendSel});
+      const btn = Array.from(document.querySelectorAll(${sendSel})).find((n) => {
+        const r = n.getBoundingClientRect();
+        const style = window.getComputedStyle(n);
+        if (!(r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none')) return false;
+        return !n.disabled;
+      });
       if (!btn) return { ok:false, error:'missing_send_button' };
       if (btn.disabled) return { ok:false, error:'send_button_disabled' };
       const r = btn.getBoundingClientRect();
