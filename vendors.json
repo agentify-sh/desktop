@@ -7,6 +7,12 @@
       "status": "supported"
     },
     {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "url": "https://www.perplexity.ai/",
+      "status": "supported"
+    },
+    {
       "id": "claude",
       "name": "Claude",
       "url": "https://claude.ai/",
