@@ -122,6 +122,7 @@ async function refresh() {
   setNum('setTabGap', settings.minTabGapMs);
   setNum('setGlobalGap', settings.minGlobalGapMs);
   setChecked('setShowTabsDefault', settings.showTabsByDefault);
+  setChecked('setAllowAuthPopups', settings.allowAuthPopups !== false);
   setChecked('setAcknowledge', false);
   el('btnSaveSettings').disabled = true;
   el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
@@ -271,6 +272,7 @@ async function main() {
         minTabGapMs: num('setTabGap', 0),
         minGlobalGapMs: num('setGlobalGap', 0),
         showTabsByDefault: !!el('setShowTabsDefault').checked,
+        allowAuthPopups: !!el('setAllowAuthPopups').checked,
         acknowledge: true
       });
       el('settingsHint').textContent = 'Saved.';
@@ -288,4 +290,3 @@ main().catch((e) => {
   const st = el('statusLine');
   st.textContent = `Control Center error: ${e?.message || String(e)}`;
 });
-

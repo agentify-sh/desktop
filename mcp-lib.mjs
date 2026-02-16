@@ -79,9 +79,17 @@ export async function ensureDesktopRunning({
     }
   }
 
-  const electronBin = path.resolve('node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
+  const defaultElectronBin = path.resolve('node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
   const entry = path.join(__dirname, 'main.mjs');
-  if (!(await fileExists(electronBin))) throw new Error('missing_electron_binary');
+  const usingCustomSpawn = spawnImpl !== spawn;
+  let electronBin = defaultElectronBin;
+  if (!(await fileExists(electronBin))) {
+    if (usingCustomSpawn) {
+      electronBin = process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || 'electron';
+    } else {
+      throw new Error('missing_electron_binary');
+    }
+  }
   if (!(await fileExists(entry))) throw new Error('missing_desktop_entry');
 
   spawnImpl(electronBin, [entry], {

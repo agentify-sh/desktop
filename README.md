@@ -57,6 +57,8 @@ The Agentify Control Center opens. Use it to:
 
 Sign in to ChatGPT in the tab window.
 
+If your account uses SSO (Google/Microsoft/Apple), keep **Settings → Allow auth popups** enabled in the Control Center. ChatGPT login often opens provider auth in a popup, and blocking popups can prevent login from completing.
+
 ## Connect from Codex (MCP)
 From the repo root:
 ```bash
@@ -131,6 +133,12 @@ Agentify Desktop can optionally run a local “orchestrator” that watches a Ch
 - **Image downloads:** prefers `<img>` elements in the latest assistant message; some UI modes may render images via nonstandard elements.
 - **Parallelism model:** “tabs” are separate windows; they can run in parallel without stealing focus unless a human check is required.
 - **Security knobs:** default is loopback-only + bearer token; token rotation and shutdown are supported via MCP tools.
+
+## Login troubleshooting (Google SSO)
+- Symptom: login shows “This browser or app may not be secure” or the flow never completes.
+- Check 1: In Control Center, enable `Allow auth popups (needed for Google/Microsoft/Apple SSO)`.
+- Check 2: Retry login from a fresh ChatGPT tab (`Create tab` → `ChatGPT` → `Show`).
+- Check 3: If your provider asks for WebAuthn/security key prompts, complete/cancel once and continue; some providers require that step before password/passkey fallback.
 
 ## Build installers (unsigned)
 ```bash

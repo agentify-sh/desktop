@@ -12,6 +12,7 @@ import { TabManager } from './tab-manager.mjs';
 import { defaultStateDir, ensureToken, readSettings, writeSettings, defaultSettings, writeState } from './state.mjs';
 import { getWorkspace, setWorkspace } from './orchestrator/storage.mjs';
 import { logPath as orchestratorLogPath } from './orchestrator/logging.mjs';
+import { shouldAllowPopup } from './popup-policy.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -168,6 +169,12 @@ async function main() {
         if (controlWin && !controlWin.isDestroyed()) controlWin.webContents.send('agentify:tabsChanged');
       } catch {}
     },
+    popupPolicy: ({ url, vendorId }) =>
+      shouldAllowPopup({
+        url,
+        vendorId,
+        allowAuthPopups: settings?.allowAuthPopups !== false
+      }),
     windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Agentify Desktop' },
     createController: async ({ tabId, win }) => {
       const controller = new ChatGPTController({
@@ -267,14 +274,14 @@ async function main() {
       settings = await writeSettings(defaultSettings(), stateDir);
       return settings;
     }
-    const next = {
-      ...settings,
-      maxInflightQueries: args?.maxInflightQueries,
-      maxQueriesPerMinute: args?.maxQueriesPerMinute,
-      minTabGapMs: args?.minTabGapMs,
-      minGlobalGapMs: args?.minGlobalGapMs,
-      showTabsByDefault: args?.showTabsByDefault
-    };
+    const next = { ...settings };
+    const has = (k) => Object.prototype.hasOwnProperty.call(args || {}, k);
+    if (has('maxInflightQueries')) next.maxInflightQueries = args.maxInflightQueries;
+    if (has('maxQueriesPerMinute')) next.maxQueriesPerMinute = args.maxQueriesPerMinute;
+    if (has('minTabGapMs')) next.minTabGapMs = args.minTabGapMs;
+    if (has('minGlobalGapMs')) next.minGlobalGapMs = args.minGlobalGapMs;
+    if (has('showTabsByDefault')) next.showTabsByDefault = args.showTabsByDefault;
+    if (has('allowAuthPopups')) next.allowAuthPopups = args.allowAuthPopups;
     if (args?.acknowledge) next.acknowledgedAt = new Date().toISOString();
     settings = await writeSettings(next, stateDir);
     return settings;
