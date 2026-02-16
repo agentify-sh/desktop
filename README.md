@@ -137,6 +137,20 @@ If you already had your client open, restart it (or start a new session) so it r
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
 - **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
 
+## Real-world prompt example
+Example `agentify_query` input:
+```json
+{
+  "key": "incident-triage-prod-api",
+  "prompt": "You are my senior incident engineer. I attached a production error log and a screenshot from our monitoring dashboard.\\n\\nGoal: produce a high-confidence triage summary and a safe hotfix plan I can execute in 30 minutes.\\n\\nRequirements:\\n1) Identify the most likely root cause with evidence from the log lines.\\n2) List top 3 hypotheses and how to falsify each quickly.\\n3) Give a step-by-step hotfix plan with exact commands.\\n4) Include rollback steps and post-fix validation checks.\\n5) Keep response concise and actionable.\\n\\nReturn format:\\n- Root cause\\n- Evidence\\n- 30-minute hotfix plan\\n- Rollback\\n- Validation checklist",
+  "attachments": [
+    "./incident/error.log",
+    "./incident/dashboard.png"
+  ],
+  "timeoutMs": 600000
+}
+```
+
 ## What's new
 - First-class multi-vendor tab support now includes Perplexity, Claude, Google AI Studio, Gemini, and Grok.
 - Control Center reliability and UX were hardened (state/refresh wiring, tab actions, compact controls, clearer field guidance).
