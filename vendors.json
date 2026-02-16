@@ -27,8 +27,8 @@
     {
       "id": "aistudio",
       "name": "Google AI Studio",
-      "url": "https://aistudio.google.com/",
-      "status": "planned"
+      "url": "https://aistudio.google.com/prompts/new_chat",
+      "status": "supported"
     }
   ]
 }
