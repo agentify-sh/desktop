@@ -143,7 +143,7 @@ async function main() {
       show: !startMinimized,
       title: 'Agentify Desktop',
       webPreferences: {
-        sandbox: false,
+        sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
         preload: path.join(__dirname, 'ui', 'preload.mjs')

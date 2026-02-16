@@ -140,6 +140,36 @@ test('http-api: body_too_large returns 413', async (t) => {
   assert.equal(data.error, 'body_too_large');
 });
 
+test('http-api: invalid JSON returns 400', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({ readPageText: async () => '' })
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const res = await fetch(`http://127.0.0.1:${port}/read-page`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer secret' },
+    body: '{"maxChars":10'
+  });
+  const data = await res.json().catch(() => ({}));
+  assert.equal(res.status, 400);
+  assert.equal(data.error, 'invalid_json');
+});
+
 test('http-api: tabs list/create/close', async (t) => {
   const created = [];
   const tabs = {

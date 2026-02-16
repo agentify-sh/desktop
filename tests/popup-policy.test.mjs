@@ -23,6 +23,10 @@ test('popup-policy: allows Google auth popup URL for aistudio vendor', () => {
   assert.equal(isAllowedAuthPopupUrl('https://accounts.google.com/signin/v2/identifier', { vendorId: 'aistudio' }), true);
 });
 
+test('popup-policy: allows Google auth popup URL for gemini vendor', () => {
+  assert.equal(isAllowedAuthPopupUrl('https://accounts.google.com/signin/v2/identifier', { vendorId: 'gemini' }), true);
+});
+
 test('popup-policy: allows x.com auth popup URL for grok vendor', () => {
   assert.equal(isAllowedAuthPopupUrl('https://x.com/i/flow/login', { vendorId: 'grok' }), true);
 });

@@ -29,10 +29,11 @@ async function parseBody(req, { maxBytes = 2_000_000 } = {}) {
     chunks.push(c);
   }
   const raw = Buffer.concat(chunks).toString('utf8');
+  if (!raw.trim()) return {};
   try {
-    return JSON.parse(raw || '{}');
+    return JSON.parse(raw);
   } catch {
-    return {};
+    throw new Error('invalid_json');
   }
 }
 
@@ -45,11 +46,13 @@ function authOk(req, token) {
 function mapErrorToHttp(error) {
   const msg = String(error?.message || '');
   if (msg === 'body_too_large') return { code: 413, body: { error: 'body_too_large' } };
+  if (msg === 'invalid_json') return { code: 400, body: { error: 'invalid_json' } };
   if (msg === 'missing_url') return { code: 400, body: { error: 'missing_url' } };
   if (msg === 'missing_prompt') return { code: 400, body: { error: 'missing_prompt' } };
   if (msg === 'prompt_too_large') return { code: 400, body: { error: 'prompt_too_large' } };
   if (msg === 'missing_tabId') return { code: 400, body: { error: 'missing_tabId' } };
   if (msg === 'missing_key') return { code: 400, body: { error: 'missing_key' } };
+  if (msg === 'key_vendor_mismatch') return { code: 409, body: { error: 'key_vendor_mismatch' } };
   if (msg === 'tab_not_found') return { code: 404, body: { error: 'tab_not_found' } };
   if (msg === 'tab_closed') return { code: 409, body: { error: 'tab_closed' } };
   if (msg === 'default_tab_protected') return { code: 409, body: { error: 'default_tab_protected' } };
