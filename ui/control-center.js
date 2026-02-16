@@ -153,8 +153,10 @@ async function refresh() {
     controls.className = 'controls';
 
     const btnShow = document.createElement('button');
-    btnShow.className = 'btn secondary';
-    btnShow.textContent = 'Show';
+    btnShow.className = 'btn secondary tabIconBtn';
+    btnShow.textContent = '◎';
+    btnShow.title = 'Show tab';
+    btnShow.setAttribute('aria-label', 'Show tab');
     btnShow.onclick = async () => {
         try {
           await callApi('showTab', { tabId: t.id }, { required: true });
@@ -164,8 +166,10 @@ async function refresh() {
     };
 
     const btnHide = document.createElement('button');
-    btnHide.className = 'btn secondary';
-    btnHide.textContent = 'Hide';
+    btnHide.className = 'btn secondary tabIconBtn';
+    btnHide.textContent = '◒';
+    btnHide.title = 'Hide tab';
+    btnHide.setAttribute('aria-label', 'Hide tab');
     btnHide.onclick = async () => {
         try {
           await callApi('hideTab', { tabId: t.id }, { required: true });
@@ -175,8 +179,10 @@ async function refresh() {
     };
 
     const btnClose = document.createElement('button');
-    btnClose.className = 'btn secondary';
-    btnClose.textContent = 'Close';
+    btnClose.className = 'btn secondary tabIconBtn';
+    btnClose.textContent = '✕';
+    btnClose.title = 'Close tab';
+    btnClose.setAttribute('aria-label', 'Close tab');
     btnClose.onclick = async () => {
       if (t.protectedTab) return;
         try {
