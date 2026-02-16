@@ -19,10 +19,16 @@
       "status": "supported"
     },
     {
+      "id": "gemini",
+      "name": "Gemini",
+      "url": "https://gemini.google.com/",
+      "status": "supported"
+    },
+    {
       "id": "grok",
       "name": "Grok",
       "url": "https://grok.com/",
-      "status": "planned"
+      "status": "supported"
     },
     {
       "id": "aistudio",

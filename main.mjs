@@ -218,8 +218,6 @@ async function main() {
   };
   if (pendingSecondInstanceFocus) focusDefaultTab();
 
-  await showControlCenter().catch(() => {});
-
   const buildMenu = () => {
     const template = [
       {
@@ -297,7 +295,7 @@ async function main() {
 
     const tabId = key
       ? await tabs.ensureTab({ key, name: name || null, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name })
-      : await tabs.createTab({ name: name || null, show: false, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name });
+      : await tabs.createTab({ name: name || null, show, url: vendor.url, vendorId: vendor.id, vendorName: vendor.name });
 
     if (show) {
       const win = tabs.getWindowById(tabId);
@@ -427,6 +425,10 @@ async function main() {
     }
     return { ok: true };
   });
+
+  // Launch control center only after IPC handlers are registered,
+  // otherwise early renderer calls can race and fail with missing handlers.
+  await showControlCenter().catch(() => {});
 
   let server = null;
   let port = basePort;

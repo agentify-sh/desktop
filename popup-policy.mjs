@@ -16,7 +16,15 @@ const CHATGPT_AUTH_HOST_ALLOWLIST = [
   'appleid.apple.com',
   '.apple.com',
   'github.com',
-  '.github.com'
+  '.github.com',
+
+  // X/Twitter auth surfaces (used by Grok accounts).
+  'x.com',
+  '.x.com',
+  'twitter.com',
+  '.twitter.com',
+  'grok.com',
+  '.grok.com'
 ];
 
 function normalizeHostname(hostname) {
@@ -45,7 +53,7 @@ export function isAllowedAuthPopupUrl(url, { vendorId = 'chatgpt' } = {}) {
 
   // Keep behavior conservative: only explicitly allow supported vendor auth flows.
   const vendor = String(vendorId || 'chatgpt').trim().toLowerCase();
-  if (!['chatgpt', 'perplexity', 'claude', 'aistudio'].includes(vendor)) return false;
+  if (!['chatgpt', 'perplexity', 'claude', 'aistudio', 'gemini', 'grok'].includes(vendor)) return false;
 
   return CHATGPT_AUTH_HOST_ALLOWLIST.some((pattern) => hostMatchesPattern(host, pattern));
 }

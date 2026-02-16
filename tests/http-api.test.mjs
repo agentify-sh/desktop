@@ -140,6 +140,36 @@ test('http-api: body_too_large returns 413', async (t) => {
   assert.equal(data.error, 'body_too_large');
 });
 
+test('http-api: invalid JSON returns 400', async (t) => {
+  const tabs = {
+    listTabs: () => [],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => ({ readPageText: async () => '' })
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const res = await fetch(`http://127.0.0.1:${port}/read-page`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer secret' },
+    body: '{"maxChars":10'
+  });
+  const data = await res.json().catch(() => ({}));
+  assert.equal(res.status, 400);
+  assert.equal(data.error, 'invalid_json');
+});
+
 test('http-api: tabs list/create/close', async (t) => {
   const created = [];
   const tabs = {
@@ -334,6 +364,40 @@ test('http-api: operations run through controller.runExclusive when available', 
   await req({ port, token: 'secret', method: 'POST', pth: '/download-images', body: { maxImages: 1 } });
 
   assert.deepEqual(calls, ['navigate', 'ensureReady', 'query', 'readPageText', 'downloadLastAssistantImages']);
+});
+
+test('http-api: ensure-ready timeout maps to 408 with details', async (t) => {
+  const controller = {
+    runExclusive: async (fn) => await fn(),
+    ensureReady: async () => {
+      const err = new Error('timeout_waiting_for_prompt');
+      err.data = { kind: 'login' };
+      throw err;
+    }
+  };
+  const tabs = {
+    listTabs: () => [{ id: 't0', key: 'default' }],
+    ensureTab: async () => 't0',
+    createTab: async () => 't0',
+    closeTab: async () => true,
+    getControllerById: () => controller
+  };
+  const server = await startHttpApi({
+    port: 0,
+    token: 'secret',
+    tabs,
+    defaultTabId: 't0',
+    serverId: 'sid-test',
+    stateDir: '/tmp',
+    getStatus: async () => ({ ok: true })
+  });
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const r = await req({ port, token: 'secret', method: 'POST', pth: '/ensure-ready', body: { timeoutMs: 1000 } });
+  assert.equal(r.res.status, 408);
+  assert.equal(r.data.error, 'timeout_waiting_for_prompt');
+  assert.deepEqual(r.data.data, { kind: 'login' });
 });
 
 test('http-api: query returns 429 when maxInflightQueries exceeded', async (t) => {

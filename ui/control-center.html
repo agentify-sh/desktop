@@ -17,26 +17,33 @@
           </div>
         </div>
         <div class="actions">
-          <button id="btnOpenState" class="btn secondary" title="Open state folder">State</button>
-          <button id="btnRefresh" class="btn secondary" title="Refresh">Refresh</button>
+          <button id="btnShowDefault" class="btn secondary" title="Show default tab">Show default</button>
+          <button id="btnOpenState" class="btn secondary" title="Open state folder">Get State</button>
+          <button id="btnRefresh" class="btn secondary iconBtn" title="Refresh" aria-label="Refresh">&#x21bb;</button>
         </div>
       </header>
 
       <main class="main">
         <section class="card">
           <div class="cardTitle">Create tab</div>
+          <div class="hint">
+            `Vendor` chooses the website, `Key` reuses the same tab for that project across calls, and `Name` is just a label shown in the tab list.
+          </div>
           <div class="grid">
             <label class="field">
               <div class="label">Vendor</div>
               <select id="vendorSelect"></select>
+              <div class="fieldHelp">Pick where this tab should open (ChatGPT, Claude, etc.).</div>
             </label>
             <label class="field">
               <div class="label">Key (optional)</div>
               <input id="tabKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+              <div class="fieldHelp">Stable routing key. Same key means the same tab is reused.</div>
             </label>
             <label class="field">
               <div class="label">Name (optional)</div>
               <input id="tabName" type="text" placeholder="e.g. billing-bot" autocomplete="off" />
+              <div class="fieldHelp">Human-friendly label only. Does not affect routing.</div>
             </label>
           </div>
           <div class="row">
@@ -51,49 +58,8 @@
 
         <section class="card">
           <div class="cardTitle">Tabs</div>
-          <div id="tabsEmpty" class="empty">No tabs.</div>
+          <div id="tabsEmpty" class="empty">No tabs listed yet. Click Refresh or Show default to reveal the default tab.</div>
           <div id="tabsList" class="tabs"></div>
-        </section>
-
-        <section class="card">
-          <div class="cardTitle">Orchestrator (single-chat emulator)</div>
-          <div class="hint">
-            Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
-          </div>
-          <div class="grid">
-            <label class="field">
-              <div class="label">Project key</div>
-              <input id="orchKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
-            </label>
-            <label class="field">
-              <div class="label">Workspace path (optional)</div>
-              <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
-            </label>
-            <label class="field">
-              <div class="label">Tool template</div>
-              <select id="orchTool">
-                <option value="codex.run">codex.run</option>
-                <option value="git.diff">git.diff</option>
-                <option value="tests.run">tests.run</option>
-                <option value="fs.read">fs.read</option>
-              </select>
-            </label>
-          </div>
-          <div class="row">
-            <div class="btnRow">
-              <button id="btnOrchStart" class="btn primary">Start</button>
-              <button id="btnOrchStop" class="btn secondary">Stop</button>
-            </div>
-            <div class="btnRow">
-              <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
-              <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
-            </div>
-          </div>
-          <div class="row">
-            <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
-          </div>
-          <div id="orchStatus" class="hint"></div>
-          <div id="orchWorkspaceHint" class="hint"></div>
         </section>
 
         <section class="card">
@@ -101,22 +67,22 @@
           <div class="hint">
             These defaults exist to reduce accidental high-rate automation. Automating web UIs may violate website terms; use responsibly.
           </div>
-          <div class="grid">
+          <div class="grid settingsGrid">
             <label class="field">
               <div class="label">Max in-flight queries</div>
-              <input id="setMaxInflight" type="number" min="1" max="12" step="1" />
+              <input id="setMaxInflight" class="compactNum" type="number" min="1" max="12" step="1" />
             </label>
             <label class="field">
               <div class="label">Max queries per minute</div>
-              <input id="setQpm" type="number" min="1" max="600" step="1" />
+              <input id="setQpm" class="compactNum" type="number" min="1" max="600" step="1" />
             </label>
             <label class="field">
               <div class="label">Min gap per tab (ms)</div>
-              <input id="setTabGap" type="number" min="0" max="60000" step="50" />
+              <input id="setTabGap" class="compactNum" type="number" min="0" max="60000" step="50" />
             </label>
             <label class="field">
               <div class="label">Min global gap (ms)</div>
-              <input id="setGlobalGap" type="number" min="0" max="10000" step="10" />
+              <input id="setGlobalGap" class="compactNum" type="number" min="0" max="10000" step="10" />
             </label>
           </div>
           <div class="row">
@@ -153,11 +119,52 @@
             Use stable <span class="mono">key</span> values (e.g. project names) to keep parallel jobs isolated.
           </div>
         </section>
+
+        <section class="card">
+          <div class="cardTitle">Orchestrator (single-chat emulator) <span class="badge warn">EXPERIMENTAL / UNTESTED</span></div>
+          <div class="hint">
+            This surface is currently experimental and not part of the stable smoke-tested path. Use with caution.
+          </div>
+          <div class="hint">
+            Runs locally: watches the ChatGPT thread for <span class="mono">agentify_tool</span> JSON blocks and executes Codex + posts results back.
+          </div>
+          <div class="grid">
+            <label class="field">
+              <div class="label">Project key</div>
+              <input id="orchKey" type="text" placeholder="e.g. repo-name" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Workspace path (optional)</div>
+              <input id="orchWorkspace" type="text" placeholder="/path/to/repo (defaults to current working dir of Agentify Desktop)" autocomplete="off" />
+            </label>
+            <label class="field">
+              <div class="label">Tool template</div>
+              <select id="orchTool">
+                <option value="codex.run">codex.run</option>
+                <option value="git.diff">git.diff</option>
+                <option value="tests.run">tests.run</option>
+                <option value="fs.read">fs.read</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <div class="btnRow">
+              <button id="btnOrchStart" class="btn primary">Start</button>
+              <button id="btnOrchStop" class="btn secondary">Stop</button>
+              <button id="btnOrchStopAll" class="btn secondary">Stop all</button>
+            </div>
+            <div class="btnRow">
+              <button id="btnOrchCopy" class="btn secondary">Copy tool JSON</button>
+              <button id="btnOrchRefresh" class="btn secondary">Refresh</button>
+            </div>
+          </div>
+          <div id="orchStatus" class="hint"></div>
+          <div id="orchWorkspaceHint" class="hint"></div>
+        </section>
       </main>
 
       <footer class="footer">
         <div id="statusLine" class="status">Loading…</div>
-        <button id="btnShowDefault" class="btn secondary">Show default</button>
       </footer>
     </div>
 
