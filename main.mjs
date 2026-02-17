@@ -146,7 +146,7 @@ async function main() {
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        preload: path.join(__dirname, 'ui', 'preload.mjs')
+        preload: path.join(__dirname, 'ui', 'preload.cjs')
       }
     });
     controlWin.setMenuBarVisibility(false);

@@ -63,7 +63,10 @@ say "Agentify Desktop quickstart"
 say "Repo: ${REPO_ROOT}"
 
 say "1) Installing dependencies (npm ci)..."
-(cd "${REPO_ROOT}" && npm ci --no-fund --no-audit)
+if ! (cd "${REPO_ROOT}" && npm ci --no-fund --no-audit); then
+  say "npm ci failed (likely package-lock drift). Falling back to npm install..."
+  (cd "${REPO_ROOT}" && npm install --no-fund --no-audit)
+fi
 
 MCP_CMD=(node "${REPO_ROOT}/mcp-server.mjs")
 SHOW_SUFFIX=""
@@ -264,12 +267,15 @@ if [[ "${FOREGROUND}" -eq 1 ]]; then
 fi
 
 (
-  cd "${REPO_ROOT}"
+  cd "${REPO_ROOT}" || exit 1
   nohup npm run start >"${DESKTOP_LOG}" 2>&1 &
   echo $! > "${STATE_DIR}/desktop.pid"
-) || true
+)
 
 PID="$(cat "${STATE_DIR}/desktop.pid" 2>/dev/null || true)"
+if [[ -z "${PID}" ]]; then
+  die "Desktop failed to start (missing PID file). Check permissions for ${STATE_DIR} and ${LOG_DIR}."
+fi
 say "Started desktop (pid ${PID:-unknown})"
 say "Desktop log: ${DESKTOP_LOG}"
 

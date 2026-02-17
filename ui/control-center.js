@@ -58,7 +58,7 @@ function hasApi(name) {
 async function callApi(name, args, { fallback = null, required = false } = {}) {
   const b = getBridge();
   if (typeof b?.[name] !== 'function') {
-    if (required) throw new Error(`missing_desktop_api:${name} (restart Agentify Desktop)`);
+    if (required) throw new Error(`missing_desktop_api:${name} (open Control Center inside Agentify Desktop, then restart)`);
     return fallback;
   }
   try {
