@@ -58,11 +58,29 @@ export class TabManager {
           win.webContents.setUserAgent(this.userAgent);
         } catch {}
       }
+      win.webContents.on('did-create-window', (childWin) => {
+        if (!childWin || childWin.isDestroyed?.()) return;
+        if (this.userAgent) {
+          try {
+            childWin.webContents.setUserAgent(this.userAgent);
+          } catch {}
+        }
+      });
       win.webContents.setWindowOpenHandler((details) => {
+        let openerUrl = '';
+        try {
+          openerUrl =
+            String(details?.referrer?.url || '').trim() ||
+            String(win.webContents.getURL?.() || '').trim() ||
+            String(url || '').trim();
+        } catch {
+          openerUrl = String(url || '').trim();
+        }
         const allow = !!this.popupPolicy({
           url: details?.url || '',
           frameName: details?.frameName || '',
           disposition: details?.disposition || '',
+          openerUrl,
           vendorId: vendorId || 'chatgpt'
         });
         if (!allow) return { action: 'deny' };
