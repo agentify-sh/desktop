@@ -31,6 +31,34 @@ test('popup-policy: allows x.com auth popup URL for grok vendor', () => {
   assert.equal(isAllowedAuthPopupUrl('https://x.com/i/flow/login', { vendorId: 'grok' }), true);
 });
 
+test('popup-policy: allows additional Google auth host used in SSO chains', () => {
+  assert.equal(isAllowedAuthPopupUrl('https://myaccount.google.com/', { vendorId: 'gemini' }), true);
+});
+
+test('popup-policy: allows about:blank popup for known vendor opener (OAuth pre-open)', () => {
+  assert.equal(
+    shouldAllowPopup({
+      url: 'about:blank',
+      vendorId: 'chatgpt',
+      openerUrl: 'https://chatgpt.com/auth/login',
+      frameName: 'oauth_popup'
+    }),
+    true
+  );
+});
+
+test('popup-policy: blocks about:blank popup for unknown opener', () => {
+  assert.equal(
+    shouldAllowPopup({
+      url: 'about:blank',
+      vendorId: 'chatgpt',
+      openerUrl: 'https://evil.example.com',
+      frameName: 'oauth_popup'
+    }),
+    false
+  );
+});
+
 test('popup-policy: blocks non-https popup URL', () => {
   assert.equal(isAllowedAuthPopupUrl('http://accounts.google.com/signin/v2/identifier', { vendorId: 'chatgpt' }), false);
 });
