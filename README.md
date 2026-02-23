@@ -56,6 +56,50 @@ Choose MCP registration target explicitly:
 ./scripts/quickstart.sh --client none
 ```
 
+## Headless Linux (Xvfb)
+If you're running Agentify Desktop on a headless Linux server, you can still complete login/CAPTCHA by connecting to a virtual display.
+
+Note: Agentify's local control API is loopback-only by design (see `SECURITY.md`). These scripts also bind the remote-viewer ports to `127.0.0.1` by default; use SSH/Tailscale port forwarding.
+
+### Browser access (noVNC)
+Install system deps (Ubuntu):
+```bash
+sudo apt-get update
+sudo apt-get install -y xvfb fluxbox x11vnc novnc websockify
+```
+
+Run:
+```bash
+./scripts/headless-xvfb-novnc.sh
+```
+
+On your laptop, forward the web port and open the URL:
+```bash
+ssh -L 6080:127.0.0.1:6080 ubuntu@<tailscale-ip-or-hostname>
+```
+
+Open:
+`http://127.0.0.1:6080/vnc.html?autoconnect=1`
+
+### VNC access (native VNC client)
+Install system deps (Ubuntu):
+```bash
+sudo apt-get update
+sudo apt-get install -y xvfb fluxbox x11vnc
+```
+
+Run:
+```bash
+./scripts/headless-xvfb-vnc.sh
+```
+
+On your laptop, forward the VNC port:
+```bash
+ssh -L 5901:127.0.0.1:5901 ubuntu@<tailscale-ip-or-hostname>
+```
+
+Then connect your VNC client to `localhost:5901`.
+
 ## Manual install & run
 ```bash
 npm i
