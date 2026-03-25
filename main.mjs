@@ -18,9 +18,11 @@ import { ChatGPTController } from './chatgpt-controller.mjs';
 import { startHttpApi } from './http-api.mjs';
 import { TabManager } from './tab-manager.mjs';
 import { defaultStateDir, ensureToken, readSettings, writeSettings, defaultSettings, writeState } from './state.mjs';
+import { createWatchFolderManager } from './watch-folder.mjs';
 import { getWorkspace, setWorkspace } from './orchestrator/storage.mjs';
 import { logPath as orchestratorLogPath } from './orchestrator/logging.mjs';
 import { shouldAllowPopup } from './popup-policy.mjs';
+import { cleanupRuntimeResources, createGracefulShutdown, registerShutdownSignals } from './shutdown.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,9 +84,13 @@ async function loadVendors() {
 }
 
 async function main() {
-  const stateDir = argValue('--state-dir') || defaultStateDir();
-  const basePort = Number(argValue('--port') || process.env.AGENTIFY_DESKTOP_PORT || 0);
-  const startMinimized = argFlag('--start-minimized');
+  let browserBackend = null;
+  let watchFolders = null;
+  let server = null;
+  try {
+    const stateDir = argValue('--state-dir') || defaultStateDir();
+    const basePort = Number(argValue('--port') || process.env.AGENTIFY_DESKTOP_PORT || 0);
+    const startMinimized = argFlag('--start-minimized');
 
   // Reduce obvious automation fingerprints (best-effort).
   try {
@@ -178,7 +184,7 @@ async function main() {
       if (controlWin && !controlWin.isDestroyed()) controlWin.webContents.send('agentify:tabsChanged');
     } catch {}
   };
-  const browserBackend = await createBrowserBackend({
+  browserBackend = await createBrowserBackend({
     kind: browserBackendKind,
     stateDir,
     windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Agentify Desktop' },
@@ -196,6 +202,13 @@ async function main() {
     chromeProfileName
   });
   const browserState = await browserBackend.start();
+  watchFolders = createWatchFolderManager({
+    stateDir,
+    onIngested: async () => {
+      emitTabsChanged();
+    }
+  });
+  await watchFolders.start();
 
   const tabs = new TabManager({
     browserBackend,
@@ -291,7 +304,8 @@ async function main() {
       defaultTabId,
       stateDir,
       browserBackend: browserBackendKind,
-      browser: browserState
+      browser: browserState,
+      runtime: server?.getRuntimeState?.() || { inflightQueries: 0, activeQueries: [] }
     };
   });
 
@@ -369,10 +383,67 @@ async function main() {
     await tabs.closeTab(tabId);
     return { ok: true };
   });
+  ipcMain.handle('agentify:stopQuery', async (_evt, args) => {
+    const tabId = String(args?.tabId || '').trim() || defaultTabId;
+    return await server?.stopActiveQuery?.({ tabId });
+  });
 
   ipcMain.handle('agentify:openStateDir', async () => {
-    await shell.openPath(stateDir);
+    const result = await shell.openPath(stateDir);
+    if (result) throw new Error(result);
     return { ok: true };
+  });
+
+  ipcMain.handle('agentify:openArtifactsDir', async () => {
+    await fs.mkdir(path.join(stateDir, 'artifacts'), { recursive: true });
+    const result = await shell.openPath(path.join(stateDir, 'artifacts'));
+    if (result) throw new Error(result);
+    return { ok: true };
+  });
+
+  ipcMain.handle('agentify:openWatchFolder', async (_evt, args) => {
+    const targetName = String(args?.name || '').trim();
+    const selected = await watchFolders.getFolderByName(targetName);
+    if (!selected) throw new Error('watch_folder_not_found');
+    const folderPath = selected.path;
+    await fs.mkdir(folderPath, { recursive: true });
+    const result = await shell.openPath(folderPath);
+    if (result) throw new Error(result);
+    return { ok: true, folderPath, folder: selected };
+  });
+
+  ipcMain.handle('agentify:listWatchFolders', async () => {
+    const folders = await watchFolders.listFolders();
+    return { ok: true, folders };
+  });
+
+  ipcMain.handle('agentify:addWatchFolder', async (_evt, args) => {
+    const folder = await watchFolders.addFolder({
+      name: String(args?.name || '').trim(),
+      folderPath: String(args?.path || '').trim()
+    });
+    emitTabsChanged();
+    return { ok: true, folder };
+  });
+
+  ipcMain.handle('agentify:removeWatchFolder', async (_evt, args) => {
+    const deleted = await watchFolders.removeFolder({ name: String(args?.name || '').trim() });
+    emitTabsChanged();
+    return { ok: true, deleted };
+  });
+
+  ipcMain.handle('agentify:pickWatchFolder', async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (res.canceled || !Array.isArray(res.filePaths) || !res.filePaths[0]) return { ok: true, path: null };
+    return { ok: true, path: res.filePaths[0] };
+  });
+
+  ipcMain.handle('agentify:scanWatchFolders', async () => {
+    const result = await watchFolders.scan();
+    emitTabsChanged();
+    return { ok: true, ...(result || {}) };
   });
 
   ipcMain.handle('agentify:getOrchestrators', async () => {
@@ -468,7 +539,6 @@ async function main() {
   // otherwise early renderer calls can race and fail with missing handlers.
   await showControlCenter().catch(() => {});
 
-  let server = null;
   let port = basePort;
   const tries = port === 0 ? 1 : 20;
   for (let i = 0; i < tries; i++) {
@@ -478,6 +548,7 @@ async function main() {
         token,
         tabs,
         defaultTabId,
+        vendors,
         serverId,
         stateDir,
         getSettings: async () => settings,
@@ -496,6 +567,23 @@ async function main() {
             server?.close?.();
           } catch {}
           app.quit();
+        },
+        onOpenArtifactsFolder: async ({ folderPath }) => {
+          await fs.mkdir(folderPath, { recursive: true });
+          const result = await shell.openPath(folderPath);
+          return !result;
+        },
+        onWatchFoldersList: async () => await watchFolders.listFolders(),
+        onAddWatchFolder: async ({ name, folderPath }) => await watchFolders.addFolder({ name, folderPath }),
+        onRemoveWatchFolder: async ({ name }) => await watchFolders.removeFolder({ name }),
+        onOpenWatchFolder: async ({ folderPath }) => {
+          await fs.mkdir(folderPath, { recursive: true });
+          const result = await shell.openPath(folderPath);
+          return !result;
+        },
+        onScanWatchFolder: async () => await watchFolders.scan(),
+        onRuntimeChanged: async () => {
+          emitTabsChanged();
         },
         getStatus: async ({ tabId }) => {
           const controller = tabId ? tabs.getControllerById(tabId) : tabs.getControllerById(defaultTabId);
@@ -529,31 +617,79 @@ async function main() {
 
   await writeState({ ok: true, port, pid: process.pid, serverId, startedAt: new Date().toISOString() }, stateDir);
 
-  app.on('before-quit', () => {
-    quitting = true;
-    for (const v of orchestrators.values()) {
+  const shutdown = createGracefulShutdown({
+    closeServer: (done) => {
       try {
-        v?.child?.kill?.('SIGTERM');
-      } catch {}
-    }
-    tabs.setQuitting(true);
-    browserBackend.dispose?.().catch?.(() => {});
+        if (!server?.listening) {
+          done?.();
+          return;
+        }
+        server.close(() => done?.());
+      } catch {
+        done?.();
+      }
+    },
+    stopWatchFolders: async () => {
+      await watchFolders.stop();
+    },
+    disposeBrowserBackend: async () => {
+      await browserBackend.dispose?.();
+    },
+    stopOrchestrators: () => {
+      for (const v of orchestrators.values()) {
+        try {
+          v?.child?.kill?.('SIGTERM');
+        } catch {}
+      }
+    },
+    setTabsQuitting: () => tabs.setQuitting(true),
+    markQuitting: () => {
+      quitting = true;
+    },
+    quitApp: () => app.quit()
   });
 
-  process.on('SIGINT', () => {
-    try {
-      server.close();
-    } catch {}
-    app.quit();
-  });
+  app.on('before-quit', shutdown.handleBeforeQuit);
+
+  registerShutdownSignals({ requestQuit: shutdown.requestQuit });
 
   app.on('window-all-closed', () => {
     app.quit();
   });
+
+    return { stateDir, browserBackend, watchFolders, server };
+  } catch (error) {
+    error.browserBackend = browserBackend;
+    error.watchFolders = watchFolders;
+    error.server = server;
+    throw error;
+  }
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   const stateDir = argValue('--state-dir') || defaultStateDir();
+  try {
+    const maybeServer = typeof e?.server?.close === 'function' ? e.server : null;
+    await cleanupRuntimeResources({
+      closeServer: (done) => {
+        try {
+          if (!maybeServer?.listening) {
+            done?.();
+            return;
+          }
+          maybeServer.close(() => done?.());
+        } catch {
+          done?.();
+        }
+      },
+      stopWatchFolders: async () => {
+        await e?.watchFolders?.stop?.();
+      },
+      disposeBrowserBackend: async () => {
+        await e?.browserBackend?.dispose?.();
+      }
+    });
+  } catch {}
   const detail = e?.data?.hint === 'close_regular_chrome_and_retry'
     ? 'Chrome is already using that profile. Fully quit regular Chrome, then retry Agentify Desktop.'
     : e?.message || String(e);

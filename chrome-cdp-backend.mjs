@@ -139,10 +139,13 @@ async function readJson(url) {
   return await response.json();
 }
 
-class ChromeCdpConnection {
-  constructor(wsUrl) {
+export class ChromeCdpConnection {
+  constructor(wsUrl, { wsFactory } = {}) {
     this.wsUrl = wsUrl;
+    this.wsFactory = typeof wsFactory === 'function' ? wsFactory : (url) => new WebSocket(url);
     this.ws = null;
+    this.connectPromise = null;
+    this.connectReject = null;
     this.nextId = 1;
     this.pending = new Map();
     this.listeners = new Map();
@@ -151,33 +154,74 @@ class ChromeCdpConnection {
 
   async connect() {
     if (this.connected && this.ws) return;
-    await new Promise((resolve, reject) => {
-      const ws = new WebSocket(this.wsUrl);
-      const onOpen = () => {
+    if (this.connectPromise) {
+      await this.connectPromise;
+      return;
+    }
+    let syncFailed = false;
+    const pendingConnect = new Promise((resolve, reject) => {
+      let ws;
+      try {
+        ws = this.wsFactory(this.wsUrl);
         this.ws = ws;
-        this.connected = true;
+      } catch (error) {
+        syncFailed = true;
+        this.connectPromise = null;
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      let settled = false;
+      const settleResolve = () => {
+        if (settled) return;
+        settled = true;
+        this.connectPromise = null;
+        this.connectReject = null;
         resolve();
       };
-      const onError = (error) => {
+      const settleReject = (error) => {
+        if (settled) return;
+        settled = true;
+        this.connectPromise = null;
+        this.connectReject = null;
         reject(error instanceof Error ? error : new Error(String(error)));
+      };
+      this.connectReject = settleReject;
+      const onOpen = () => {
+        if (this.ws !== ws) return;
+        this.connected = true;
+        settleResolve();
+      };
+      const onError = (error) => {
+        this.connected = false;
+        if (this.ws === ws) this.ws = null;
+        settleReject(error);
       };
       ws.addEventListener('open', onOpen, { once: true });
       ws.addEventListener('error', onError, { once: true });
       ws.addEventListener('message', (event) => this.#handleMessage(event));
       ws.addEventListener('close', () => {
+        if (this.ws !== ws) return;
         this.connected = false;
         this.ws = null;
+        this.#rejectPending(new Error('chrome_cdp_disconnected'));
+        settleReject(new Error('chrome_cdp_disconnected'));
       });
     });
+    this.connectPromise = syncFailed ? null : pendingConnect;
+    await pendingConnect;
   }
 
   async close() {
+    this.connectPromise = null;
     if (!this.ws) return;
+    const rejectConnect = this.connectReject;
     try {
       this.ws.close();
     } catch {}
     this.ws = null;
     this.connected = false;
+    rejectConnect?.(new Error('chrome_cdp_disconnected'));
+    this.#rejectPending(new Error('chrome_cdp_disconnected'));
   }
 
   on(method, handler) {
@@ -234,6 +278,16 @@ class ChromeCdpConnection {
     for (const handler of handlers) {
       try {
         handler(msg.params || {}, msg.sessionId || null);
+      } catch {}
+    }
+  }
+
+  #rejectPending(error) {
+    const pending = Array.from(this.pending.values());
+    this.pending.clear();
+    for (const item of pending) {
+      try {
+        item.reject(error);
       } catch {}
     }
   }
@@ -396,7 +450,9 @@ class ChromeCdpPageAdapter {
 
   async close() {
     if (this.closed) return;
-    await this.client.send('Target.closeTarget', { targetId: this.targetId });
+    try {
+      await this.client.send('Target.closeTarget', { targetId: this.targetId });
+    } catch {}
     this.closed = true;
   }
 }
@@ -458,7 +514,7 @@ export class ChromeCdpBrowserBackend {
   }
 
   async start() {
-    if (this.started && this.client) {
+    if (this.started && this.client?.connected && this.client?.ws) {
       return this.getState();
     }
 
@@ -486,57 +542,76 @@ export class ChromeCdpBrowserBackend {
       throw err;
     }
 
-    const executable = await findChromeExecutable(this.executablePath);
-    const args = buildChromeLaunchArgs({
-      debugPort: this.debugPort,
-      userDataDir: this.chromeUserDataDir,
-      profileName: this.profileName,
-      startUrl: 'about:blank'
-    });
-    this.chromeProcess = spawn(executable, args, {
-      stdio: 'ignore'
-    });
-    this.chromeProcess.unref?.();
+    try {
+      const executable = await findChromeExecutable(this.executablePath);
+      const args = buildChromeLaunchArgs({
+        debugPort: this.debugPort,
+        userDataDir: this.chromeUserDataDir,
+        profileName: this.profileName,
+        startUrl: 'about:blank'
+      });
+      this.chromeProcess = spawn(executable, args, {
+        stdio: 'ignore'
+      });
+      this.chromeProcess.unref?.();
 
-    let version;
-    const start = Date.now();
-    while (Date.now() - start < 15_000) {
-      try {
-        version = await readJson(`http://127.0.0.1:${this.debugPort}/json/version`);
-        break;
-      } catch {
-        await sleep(250);
+      let version;
+      const start = Date.now();
+      while (Date.now() - start < 15_000) {
+        try {
+          version = await readJson(`http://127.0.0.1:${this.debugPort}/json/version`);
+          break;
+        } catch {
+          await sleep(250);
+        }
       }
-    }
-    if (!version) {
-      const err = new Error('chrome_cdp_unavailable');
-      err.data =
-        this.profileMode === 'existing'
-          ? {
-              profileMode: this.profileMode,
-              profileName: this.profileName,
-              userDataDir: this.chromeUserDataDir,
-              hint: 'close_regular_chrome_and_retry'
-            }
-          : { profileMode: this.profileMode, userDataDir: this.chromeUserDataDir };
-      throw err;
-    }
+      if (!version) {
+        const err = new Error('chrome_cdp_unavailable');
+        err.data =
+          this.profileMode === 'existing'
+            ? {
+                profileMode: this.profileMode,
+                profileName: this.profileName,
+                userDataDir: this.chromeUserDataDir,
+                hint: 'close_regular_chrome_and_retry'
+              }
+            : { profileMode: this.profileMode, userDataDir: this.chromeUserDataDir };
+        throw err;
+      }
 
-    const wsUrl = String(version?.webSocketDebuggerUrl || '').trim();
-    if (!wsUrl) throw new Error('chrome_cdp_missing_ws_url');
-    this.client = new ChromeCdpConnection(wsUrl);
-    await this.client.connect();
-    this.boundTargetDestroyed = this.client.on('Target.targetDestroyed', ({ targetId }) => {
-      const closer = this.tabClosers.get(String(targetId || ''));
-      if (!closer) return;
-      this.tabClosers.delete(String(targetId || ''));
+      const wsUrl = String(version?.webSocketDebuggerUrl || '').trim();
+      if (!wsUrl) throw new Error('chrome_cdp_missing_ws_url');
+      this.client = new ChromeCdpConnection(wsUrl);
+      await this.client.connect();
+      this.boundTargetDestroyed = this.client.on('Target.targetDestroyed', ({ targetId }) => {
+        const closer = this.tabClosers.get(String(targetId || ''));
+        if (!closer) return;
+        this.tabClosers.delete(String(targetId || ''));
+        try {
+          closer();
+        } catch {}
+        this.onChanged?.();
+      });
+      this.started = true;
+      return this.getState();
+    } catch (error) {
       try {
-        closer();
+        this.boundTargetDestroyed?.();
       } catch {}
-      this.onChanged?.();
-    });
-    this.started = true;
-    return this.getState();
+      this.boundTargetDestroyed = null;
+      try {
+        await this.client?.close?.();
+      } catch {}
+      this.client = null;
+      this.started = false;
+      if (this.chromeProcess && !this.chromeProcess.killed) {
+        try {
+          this.chromeProcess.kill('SIGTERM');
+        } catch {}
+      }
+      this.chromeProcess = null;
+      throw error;
+    }
   }
 
   getState() {
@@ -564,38 +639,46 @@ export class ChromeCdpBrowserBackend {
     }
     const targetId = String(target?.targetId || '').trim();
     if (!targetId) throw new Error('chrome_cdp_target_create_failed');
-
-    const attach = await this.client.send('Target.attachToTarget', { targetId, flatten: true });
-    const sessionId = String(attach?.sessionId || '').trim();
-    if (!sessionId) throw new Error('chrome_cdp_attach_failed');
-
-    let windowId = null;
     try {
-      const browserWindow = await this.client.send('Browser.getWindowForTarget', { targetId });
-      if (browserWindow && Number.isFinite(browserWindow.windowId)) windowId = browserWindow.windowId;
-    } catch {}
+      const attach = await this.client.send('Target.attachToTarget', { targetId, flatten: true });
+      const sessionId = String(attach?.sessionId || '').trim();
+      if (!sessionId) throw new Error('chrome_cdp_attach_failed');
 
-    const page = new ChromeCdpPageAdapter({ client: this.client, targetId, sessionId, windowId });
-    await page.initialize({ userAgent: this.userAgent });
-    if (show) await page.bringToFront().catch(() => {});
-    else await page.minimize().catch(() => {});
+      let windowId = null;
+      try {
+        const browserWindow = await this.client.send('Browser.getWindowForTarget', { targetId });
+        if (browserWindow && Number.isFinite(browserWindow.windowId)) windowId = browserWindow.windowId;
+      } catch {}
 
-    this.tabClosers.set(targetId, () => {
-      page.markClosed();
-      onClosed?.();
-    });
-    this.onChanged?.();
+      const page = new ChromeCdpPageAdapter({ client: this.client, targetId, sessionId, windowId });
+      await page.initialize({ userAgent: this.userAgent });
+      if (show) await page.bringToFront().catch(() => {});
+      else await page.minimize().catch(() => {});
 
-    return {
-      page,
-      presenter: new ChromeCdpPresenter(page),
-      close: async () => {
-        this.tabClosers.delete(targetId);
-        await page.close();
+      this.tabClosers.set(targetId, () => {
+        page.markClosed();
         onClosed?.();
-      },
-      isClosed: () => page.isClosed()
-    };
+      });
+      this.onChanged?.();
+
+      return {
+        page,
+        presenter: new ChromeCdpPresenter(page),
+        close: async () => {
+          this.tabClosers.delete(targetId);
+          try {
+            await page.close();
+          } catch {}
+          onClosed?.();
+        },
+        isClosed: () => page.isClosed()
+      };
+    } catch (error) {
+      try {
+        await this.client.send('Target.closeTarget', { targetId });
+      } catch {}
+      throw error;
+    }
   }
 
   async dispose() {
@@ -614,5 +697,7 @@ export class ChromeCdpBrowserBackend {
       } catch {}
     }
     this.chromeProcess = null;
+    this.started = false;
+    this.tabClosers.clear();
   }
 }

@@ -79,7 +79,12 @@ export async function ensureDesktopRunning({
     }
   }
 
-  const defaultElectronBin = path.resolve('node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
+  const defaultElectronBin = path.resolve(
+    __dirname,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'electron.cmd' : 'electron'
+  );
   const entry = path.join(__dirname, 'main.mjs');
   const usingCustomSpawn = spawnImpl !== spawn;
   let electronBin = defaultElectronBin;
@@ -93,6 +98,7 @@ export async function ensureDesktopRunning({
   if (!(await fileExists(entry))) throw new Error('missing_desktop_entry');
 
   spawnImpl(electronBin, [entry], {
+    detached: true,
     stdio: 'ignore',
     env: {
       ...process.env,

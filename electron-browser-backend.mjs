@@ -1,4 +1,16 @@
-import { BrowserWindow } from 'electron';
+import electron from 'electron';
+
+const { BrowserWindow } = electron;
+
+function trackWindow(windows, win) {
+  if (!win) return;
+  windows.add(win);
+  try {
+    win.on('closed', () => {
+      windows.delete(win);
+    });
+  } catch {}
+}
 
 class ElectronPageAdapter {
   constructor(win) {
@@ -32,7 +44,13 @@ class ElectronPageAdapter {
   }
 
   async insertText(text) {
-    this.win.webContents.sendInputEvent({ type: 'char', keyCode: String(text || '') });
+    const value = String(text || '');
+    if (!value) return;
+    if (typeof this.win?.webContents?.insertText === 'function') {
+      await this.win.webContents.insertText(value);
+      return;
+    }
+    this.win.webContents.sendInputEvent({ type: 'char', keyCode: value });
   }
 
   async moveMouse(x, y) {
@@ -134,12 +152,14 @@ class ElectronPresenter {
 }
 
 export class ElectronBrowserBackend {
-  constructor({ windowDefaults, userAgent, popupPolicy, onChanged } = {}) {
+  constructor({ windowDefaults, userAgent, popupPolicy, onChanged, BrowserWindowClass = BrowserWindow } = {}) {
     this.windowDefaults = windowDefaults || { width: 1100, height: 800, show: false, title: 'Agentify Desktop' };
     this.userAgent = typeof userAgent === 'string' && userAgent.trim() ? userAgent.trim() : null;
     this.popupPolicy = typeof popupPolicy === 'function' ? popupPolicy : (() => false);
     this.onChanged = typeof onChanged === 'function' ? onChanged : null;
+    this.BrowserWindowClass = BrowserWindowClass;
     this.quitting = false;
+    this.windows = new Set();
   }
 
   async start() {
@@ -161,7 +181,8 @@ export class ElectronBrowserBackend {
     vendorName = null,
     onClosed
   } = {}) {
-    const win = new BrowserWindow({
+    let forceClose = false;
+    const win = new this.BrowserWindowClass({
       ...this.windowDefaults,
       show: !!show,
       webPreferences: {
@@ -171,6 +192,7 @@ export class ElectronBrowserBackend {
         ...(this.windowDefaults.webPreferences || {})
       }
     });
+    trackWindow(this.windows, win);
     if (this.userAgent) {
       try {
         win.webContents.setUserAgent(this.userAgent);
@@ -178,6 +200,7 @@ export class ElectronBrowserBackend {
     }
     win.webContents.on('did-create-window', (childWin) => {
       if (!childWin || childWin.isDestroyed?.()) return;
+      trackWindow(this.windows, childWin);
       if (this.userAgent) {
         try {
           childWin.webContents.setUserAgent(this.userAgent);
@@ -236,6 +259,7 @@ export class ElectronBrowserBackend {
     });
     win.on('close', (event) => {
       if (this.quitting) return;
+      if (forceClose) return;
       if (!protectedTab) return;
       try {
         event.preventDefault();
@@ -244,13 +268,22 @@ export class ElectronBrowserBackend {
       } catch {}
     });
 
-    await win.loadURL(url);
+    try {
+      await win.loadURL(url);
+    } catch (error) {
+      try {
+        if (!win.isDestroyed?.()) win.destroy?.();
+      } catch {}
+      throw error;
+    }
     this.onChanged?.();
     return {
       page: new ElectronPageAdapter(win),
       presenter: new ElectronPresenter(win),
       close: async () => {
         try {
+          this.windows.delete(win);
+          forceClose = true;
           win.close();
         } catch {}
       },
@@ -258,5 +291,17 @@ export class ElectronBrowserBackend {
     };
   }
 
-  async dispose() {}
+  async dispose() {
+    this.quitting = true;
+    const wins = Array.from(this.windows);
+    this.windows.clear();
+    for (const win of wins) {
+      try {
+        if (!win?.isDestroyed?.()) {
+          if (typeof win.close === 'function') win.close();
+          else if (typeof win.destroy === 'function') win.destroy();
+        }
+      } catch {}
+    }
+  }
 }

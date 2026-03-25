@@ -6,7 +6,7 @@ Agentify Desktop is a local-first control center for AI work: connect your real,
 - `🌐` **Real browser sessions, real accounts**: automate the web UIs you already use, without API-key migration.
 - `🔌` **MCP-native integration**: works with Codex, Claude Code, OpenCode, and other MCP-capable clients.
 - `🧵` **Parallel tabs for parallel work**: run multiple isolated workflows at once using stable tab keys.
-- `📎` **Practical I/O support**: upload files and download generated images from assistant responses.
+- `📎` **Practical I/O support**: upload files, save generated images/files locally, and reattach them in later prompts.
 
 ## Supported sites
 **Supported**
@@ -144,6 +144,250 @@ That proves the core loop:
 - call it from Codex / Claude Code over MCP
 - reuse the same tab/session across multiple requests
 
+### First artifact workflow
+This is the fastest way to prove the image/file pipeline is useful.
+
+1. Generate something in a stable tab:
+
+Prompt:
+```text
+Use tab key sprite-lab.
+Generate a simple 2D pixel-art robot sprite on a transparent background.
+Give me 3 variations.
+```
+
+2. Save the latest generated outputs to disk:
+
+```json
+{
+  "tool": "agentify_save_artifacts",
+  "arguments": {
+    "key": "sprite-lab",
+    "mode": "images",
+    "maxImages": 3
+  }
+}
+```
+
+The response includes local file paths. You can immediately reuse one of them in the next step.
+
+3. Reattach one of the returned paths in the next prompt:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "sprite-lab",
+    "prompt": "Take the attached sprite and create a damaged version with one broken eye and darker metal.",
+    "attachments": [
+      "/ABS/PATH/FROM/PREVIOUS/STEP/sprite.png"
+    ]
+  }
+}
+```
+
+4. If you want the folder in Finder/Explorer:
+
+```json
+{
+  "tool": "agentify_open_artifacts_folder",
+  "arguments": {
+    "key": "sprite-lab"
+  }
+}
+```
+
+That proves the artifact loop:
+- generate in a real web session
+- save locally without manual browser downloads
+- reuse the saved file path in the next MCP prompt
+
+### First codebase stuffing workflow
+Use this when you want to hand a repo or folder tree to the model without manually copy/pasting files.
+
+1. Ask Agentify to pack a folder into the next query:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "repo-review",
+    "prompt": "Summarize this codebase in 8 bullets and list the top 3 risky files to change first.",
+    "contextPaths": [
+      "/ABS/PATH/TO/YOUR/REPO"
+    ]
+  }
+}
+```
+
+2. Inspect the returned `packedContextSummary` in the tool result.
+
+It tells you, at a glance:
+- which roots were scanned
+- how many files were scanned
+- which text files were inlined
+- which files were auto-attached
+- which files were skipped and why
+
+3. If the first pass is too large or too small, tighten the budget explicitly:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "repo-review",
+    "prompt": "Focus only on the rendering pipeline and state management.",
+    "contextPaths": [
+      "/ABS/PATH/TO/YOUR/REPO"
+    ],
+    "maxContextChars": 60000,
+    "maxContextFiles": 40,
+    "maxContextChunkChars": 4000,
+    "maxContextChunksPerFile": 2,
+    "maxContextInlineFiles": 12,
+    "maxContextAttachments": 6
+  }
+}
+```
+
+4. Reuse the same tab key for follow-ups:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "repo-review",
+    "prompt": "Now give me a safe refactor plan for the top risky file."
+  }
+}
+```
+
+That proves the codebase loop:
+- point Agentify at a folder
+- let it inline text files and auto-attach binaries/images
+- inspect what it included vs skipped
+- keep the same live session for follow-up questions
+
+### Watch-folder ingestion workflow
+Use this when you want a dead-simple local drop zone.
+
+1. Open the default inbox folder:
+
+```json
+{
+  "tool": "agentify_open_watch_folder",
+  "arguments": {}
+}
+```
+
+2. Drop files into that folder from Finder/Explorer or another local tool.
+
+3. Agentify will index them automatically. If you want to force it immediately:
+
+```json
+{
+  "tool": "agentify_scan_watch_folder",
+  "arguments": {}
+}
+```
+
+4. List the ingested files and reuse their paths:
+
+```json
+{
+  "tool": "agentify_list_artifacts",
+  "arguments": {
+    "limit": 20
+  }
+}
+```
+
+Then pass one of the returned `path` values into the next `attachments` array.
+
+You can also add your own watched folders:
+
+```json
+{
+  "tool": "agentify_add_watch_folder",
+  "arguments": {
+    "name": "sprites",
+    "folderPath": "/ABS/PATH/TO/sprites"
+  }
+}
+```
+
+List them:
+
+```json
+{
+  "tool": "agentify_list_watch_folders",
+  "arguments": {}
+}
+```
+
+Remove one later:
+
+```json
+{
+  "tool": "agentify_remove_watch_folder",
+  "arguments": {
+    "name": "sprites"
+  }
+}
+```
+
+### Reusable context bundle workflow
+Use this when you keep sending the same codebase roots, screenshots, and instruction prefix.
+
+1. Save a bundle once:
+
+```json
+{
+  "tool": "agentify_save_bundle",
+  "arguments": {
+    "name": "repo-review",
+    "promptPrefix": "You are reviewing this repository for safe incremental changes. Be concrete and concise.",
+    "contextPaths": [
+      "/ABS/PATH/TO/repo/src",
+      "/ABS/PATH/TO/repo/package.json"
+    ],
+    "attachments": [
+      "/ABS/PATH/TO/repo/docs/architecture.png"
+    ]
+  }
+}
+```
+
+2. Reuse it later in a normal query:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "repo-review-chatgpt",
+    "bundleName": "repo-review",
+    "prompt": "Find the riskiest auth-related change points and propose the smallest safe refactor plan."
+  }
+}
+```
+
+3. If needed, add extra one-off context on top of the bundle:
+
+```json
+{
+  "tool": "agentify_query",
+  "arguments": {
+    "key": "repo-review-chatgpt",
+    "bundleName": "repo-review",
+    "promptPrefix": "Prioritize fixes we can ship today.",
+    "contextPaths": [
+      "/ABS/PATH/TO/repo/new-module"
+    ],
+    "prompt": "Update the plan with the new module included."
+  }
+}
+```
+
 Good next workflow:
 - create separate keys like `cmp-chatgpt`, `cmp-claude`, `cmp-gemini`
 - send the same architecture prompt to each
@@ -245,17 +489,29 @@ Use explicit tool calls (`agentify_query`, `agentify_read_page`, etc.) when you 
 - **Drive ChatGPT/Perplexity/Claude/AI Studio/Gemini/Grok from your MCP client:** call `agentify_ensure_ready`, then `agentify_query` with a `prompt`. Use a stable `key` per project to keep parallel jobs isolated.
 - **Parallel jobs:** create/ensure a tab per project with `agentify_tab_create(key: ...)`, then use that `key` for `agentify_query`, `agentify_read_page`, and `agentify_download_images`.
 - **Upload files:** pass local paths via `attachments` to `agentify_query` (best-effort; depends on the site UI).
-- **Generate/download images:** ask for images via `agentify_query` (then call `agentify_download_images`), or use `agentify_image_gen` (prompt + download).
+- **Generate/save/reuse artifacts:** ask for images/files via `agentify_query`, then call `agentify_save_artifacts` or `agentify_download_images`. Reuse the returned local paths in the next `attachments` array.
+- **Open the artifact folder quickly:** call `agentify_open_artifacts_folder` or click `Artifacts` in the Control Center.
+- **Use local inbox/watch folders:** call `agentify_open_watch_folder`, `agentify_add_watch_folder`, or manage them in the Control Center. Each watched folder has a one-click open button in the UI.
+- **Stuff folder context into a prompt:** pass `contextPaths` to `agentify_query`. Agentify will inline chunked text files into the prompt and auto-attach small binary/image files when useful.
+- **Tune large-context packing when needed:** `agentify_query` also accepts `maxContextChars`, `maxContextFiles`, `maxContextFileChars`, `maxContextChunkChars`, `maxContextChunksPerFile`, `maxContextInlineFiles`, and `maxContextAttachments`.
+- **Vendor-aware context budgets:** packed context defaults are tuned by the target vendor/tab so large folder stuffing is less aggressive on narrower UIs and more generous where it makes sense.
+- **Break-glass stop for stuck runs:** `agentify_status` includes `activeQuery` / `runtime.activeQueries`, `agentify_stop_query` requests a stop, and the Control Center shows a `Stop` button on tabs with a running job.
+- **Reuse project context without rebuilding it every time:** save a named bundle with `agentify_save_bundle`, then pass `bundleName` to `agentify_query`.
 
 ## Real-world prompt example
 Example `agentify_query` input:
 ```json
 {
   "key": "incident-triage-prod-api",
+  "promptPrefix": "Prefer precise shell commands and call out risky assumptions.",
   "prompt": "You are my senior incident engineer. I attached a production error log and a screenshot from our monitoring dashboard.\\n\\nGoal: produce a high-confidence triage summary and a safe hotfix plan I can execute in 30 minutes.\\n\\nRequirements:\\n1) Identify the most likely root cause with evidence from the log lines.\\n2) List top 3 hypotheses and how to falsify each quickly.\\n3) Give a step-by-step hotfix plan with exact commands.\\n4) Include rollback steps and post-fix validation checks.\\n5) Keep response concise and actionable.\\n\\nReturn format:\\n- Root cause\\n- Evidence\\n- 30-minute hotfix plan\\n- Rollback\\n- Validation checklist",
   "attachments": [
     "./incident/error.log",
     "./incident/dashboard.png"
+  ],
+  "contextPaths": [
+    "./src",
+    "./package.json"
   ],
   "timeoutMs": 600000
 }

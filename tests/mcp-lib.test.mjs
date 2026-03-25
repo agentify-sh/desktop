@@ -92,6 +92,7 @@ test('mcp-lib: ensureDesktopRunning spawns if serverId mismatches and then recov
   const spawnImpl = (_cmd, _args, opts) => {
     spawned += 1;
     assert.equal(opts?.env?.AGENTIFY_DESKTOP_SHOW_TABS, 'true');
+    assert.equal(opts?.detached, true);
     // Simulate that the spawned app writes a new state with matching serverId.
     fetchServerId = 'sid-new';
     void writeState({ ok: true, port: 12345, serverId: 'sid-new' }, dir);
@@ -101,4 +102,37 @@ test('mcp-lib: ensureDesktopRunning spawns if serverId mismatches and then recov
   const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000, showTabs: true });
   assert.ok(spawned >= 1);
   assert.equal(conn.serverId, 'sid-new');
+});
+
+test('mcp-lib: ensureDesktopRunning resolves bundled electron relative to desktop package, not cwd', async () => {
+  const dir = await tempDir();
+  const token = 't';
+  await ensureToken(dir);
+  await fs.writeFile(path.join(dir, 'token.txt'), `${token}\n`, 'utf8');
+
+  const originalCwd = process.cwd();
+  const fakeCwd = await tempDir();
+  let spawnedCmd = null;
+  let spawnedArgs = null;
+  let running = false;
+  try {
+    process.chdir(fakeCwd);
+    const fetchImpl = makeFetch({ getServerId: () => (running ? 'sid-new' : 'sid-missing'), acceptToken: token });
+    const spawnImpl = (cmd, args, opts) => {
+      spawnedCmd = cmd;
+      spawnedArgs = args;
+      assert.equal(opts?.detached, true);
+      running = true;
+      void writeState({ ok: true, port: 12345, serverId: 'sid-new' }, dir);
+      return { unref() {} };
+    };
+
+    const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000 });
+    assert.equal(conn.serverId, 'sid-new');
+    assert.equal(path.isAbsolute(spawnedCmd), true);
+    assert.match(spawnedCmd, /desktop[\\/]+node_modules[\\/]+\.bin[\\/]+electron(?:\.cmd)?$/);
+    assert.equal(spawnedArgs?.[0]?.endsWith(path.join('desktop', 'main.mjs')), true);
+  } finally {
+    process.chdir(originalCwd);
+  }
 });

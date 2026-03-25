@@ -15,6 +15,24 @@ class Mutex {
   }
 }
 
+function normalizeVendorToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function tabMatchesVendor(tab, { vendorId = null, url = null } = {}) {
+  if (!vendorId && !url) return true;
+  const requestedId = normalizeVendorToken(vendorId);
+  const currentId = normalizeVendorToken(tab?.vendorId || '');
+  if (requestedId && currentId) return requestedId === currentId;
+  const currentUrl = String(tab?.url || '').trim();
+  const requestedUrl = String(url || '').trim();
+  if (currentUrl && requestedUrl) return currentUrl.startsWith(requestedUrl) || requestedUrl.startsWith(currentUrl);
+  return false;
+}
+
 export class TabManager {
   constructor({ browserBackend, createController, maxTabs = 12, onNeedsAttention, onChanged }) {
     this.browserBackend = browserBackend;
@@ -60,7 +78,16 @@ export class TabManager {
         vendorName,
         onClosed: finalizeClose
       });
-      const controller = await this.createController({ tabId: id, page: session.page, session });
+      let controller = null;
+      try {
+        controller = await this.createController({ tabId: id, page: session.page, session });
+      } catch (error) {
+        try {
+          await session?.close?.();
+        } catch {}
+        finalizeClose();
+        throw error;
+      }
 
       const tab = {
         id,
@@ -93,7 +120,7 @@ export class TabManager {
         this.keyToId.delete(key);
         return await this.createTab({ key, name, show: !!show, url, vendorId, vendorName });
       }
-      if (vendorId && tab.vendorId && tab.vendorId !== vendorId) throw new Error('key_vendor_mismatch');
+      if (!tabMatchesVendor(tab, { vendorId, url })) throw new Error('key_vendor_mismatch');
       return existing;
     }
     return await this.createTab({ key, name, show: !!show, url, vendorId, vendorName });
