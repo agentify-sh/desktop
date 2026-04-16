@@ -1,9 +1,43 @@
 {
-  "name": "agentify-desktop",
-  "private": true,
+  "name": "@agentify/desktop",
   "version": "0.1.0",
+  "description": "Agentify Desktop control center and MCP server for local AI web sessions",
+  "license": "MIT",
   "type": "module",
   "main": "main.mjs",
+  "bin": {
+    "agentify-desktop": "./bin/agentify-desktop.mjs",
+    "agentify-desktop-gui": "./bin/agentify-desktop.mjs",
+    "agentify-desktop-mcp": "./bin/agentify-desktop.mjs"
+  },
+  "files": [
+    "README.md",
+    "SECURITY.md",
+    "TRADEMARKS.md",
+    "artifact-store.mjs",
+    "browser-backend.mjs",
+    "bundle-store.mjs",
+    "chatgpt-controller.mjs",
+    "chrome-cdp-backend.mjs",
+    "config.mjs",
+    "context-packer.mjs",
+    "electron-browser-backend.mjs",
+    "http-api.mjs",
+    "main.mjs",
+    "mcp-lib.mjs",
+    "mcp-server.mjs",
+    "orchestrator.mjs",
+    "orchestrator/",
+    "popup-policy.mjs",
+    "selectors.json",
+    "shutdown.mjs",
+    "state.mjs",
+    "tab-manager.mjs",
+    "ui/",
+    "vendors.json",
+    "watch-folder.mjs",
+    "bin/"
+  ],
   "scripts": {
     "start": "electron .",
     "mcp": "node mcp-server.mjs",
@@ -12,15 +46,22 @@
     "dist": "electron-builder"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "electron": "^39.6.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "electron": "^39.8.7",
     "zod": "^3.22.3"
   },
   "devDependencies": {
-    "electron-builder": "^26.7.0"
+    "electron-builder": "^26.8.1"
   },
   "overrides": {
-    "hono": "^4.11.7"
+    "@hono/node-server": "^1.19.14",
+    "ajv": "^8.18.0",
+    "express-rate-limit": "^8.3.2",
+    "hono": "^4.12.14",
+    "path-to-regexp": "^8.4.2"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "build": {
     "appId": "com.agentify.desktop",
