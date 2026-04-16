@@ -14,9 +14,9 @@ test('package manifest is publishable under @agentify/desktop with npx-friendly 
   assert.equal(manifest.name, '@agentify/desktop');
   assert.equal(manifest.private, undefined);
   assert.equal(manifest.publishConfig?.access, 'public');
-  assert.equal(manifest.bin?.['agentify-desktop'], './bin/agentify-desktop.mjs');
-  assert.equal(manifest.bin?.['agentify-desktop-gui'], './bin/agentify-desktop.mjs');
-  assert.equal(manifest.bin?.['agentify-desktop-mcp'], './bin/agentify-desktop.mjs');
+  assert.equal(manifest.bin?.['agentify-desktop'], 'bin/agentify-desktop.mjs');
+  assert.equal(manifest.bin?.['agentify-desktop-gui'], 'bin/agentify-desktop.mjs');
+  assert.equal(manifest.bin?.['agentify-desktop-mcp'], 'bin/agentify-desktop.mjs');
   assert.ok(manifest.files.includes('bin/'));
   assert.ok(manifest.files.includes('main.mjs'));
   assert.ok(manifest.files.includes('mcp-server.mjs'));

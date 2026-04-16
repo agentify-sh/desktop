@@ -6,9 +6,9 @@
   "type": "module",
   "main": "main.mjs",
   "bin": {
-    "agentify-desktop": "./bin/agentify-desktop.mjs",
-    "agentify-desktop-gui": "./bin/agentify-desktop.mjs",
-    "agentify-desktop-mcp": "./bin/agentify-desktop.mjs"
+    "agentify-desktop": "bin/agentify-desktop.mjs",
+    "agentify-desktop-gui": "bin/agentify-desktop.mjs",
+    "agentify-desktop-mcp": "bin/agentify-desktop.mjs"
   },
   "files": [
     "README.md",
