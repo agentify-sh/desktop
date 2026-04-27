@@ -2,24 +2,30 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ElectronBrowserBackend } from '../electron-browser-backend.mjs';
+import { shouldAllowPopup } from '../popup-policy.mjs';
 
 class MockBrowserWindow {
   constructor() {
     this.destroyed = false;
     this.closed = false;
     this.minimized = false;
+    this.url = '';
     this.listeners = new Map();
     this.webContentsListeners = new Map();
+    this.windowOpenHandler = null;
     this.webContents = {
       isDestroyed: () => this.destroyed,
       setUserAgent: () => {},
       insertText: async () => {},
+      getURL: () => this.url,
       on: (event, handler) => {
         const list = this.webContentsListeners.get(event) || [];
         list.push(handler);
         this.webContentsListeners.set(event, list);
       },
-      setWindowOpenHandler: () => {}
+      setWindowOpenHandler: (handler) => {
+        this.windowOpenHandler = handler;
+      }
     };
   }
 
@@ -178,6 +184,105 @@ test('electron-browser-backend: dispose closes tracked auth popup child windows 
   assert.equal(parent.closed, true);
   assert.equal(child.closed, true);
   assert.equal(backend.windows.size, 0);
+});
+
+test('electron-browser-backend: forwards opener context (url, frameName, disposition, openerUrl, vendorId) to popupPolicy', async () => {
+  let capturedDetails = null;
+  let createdWindow = null;
+  class OkBrowserWindow extends MockBrowserWindow {
+    constructor(...args) {
+      super(...args);
+      createdWindow = this;
+    }
+
+    async loadURL(url) {
+      this.url = url;
+    }
+  }
+
+  const backend = new ElectronBrowserBackend({
+    BrowserWindowClass: OkBrowserWindow,
+    popupPolicy: (details) => {
+      capturedDetails = details;
+      return false;
+    }
+  });
+
+  await backend.createSession({ url: 'https://chatgpt.com/auth/login', vendorId: 'chatgpt' });
+  assert.equal(typeof createdWindow.windowOpenHandler, 'function');
+
+  const result = createdWindow.windowOpenHandler({
+    url: 'about:blank',
+    frameName: 'oauth_popup',
+    disposition: 'new-window',
+    referrer: { url: 'https://chatgpt.com/auth/login' }
+  });
+
+  assert.deepEqual(result, { action: 'deny' });
+  assert.ok(capturedDetails, 'popupPolicy should have been called');
+  assert.equal(capturedDetails.url, 'about:blank');
+  assert.equal(capturedDetails.frameName, 'oauth_popup');
+  assert.equal(capturedDetails.disposition, 'new-window');
+  assert.equal(capturedDetails.openerUrl, 'https://chatgpt.com/auth/login');
+  assert.equal(capturedDetails.vendorId, 'chatgpt');
+});
+
+test('electron-browser-backend: about:blank Google SSO pre-open from ChatGPT is allowed via real popup policy (regression for #11)', async () => {
+  // Mirror the wrapper used in main.mjs: spread all details into shouldAllowPopup.
+  const popupPolicy = (details) =>
+    shouldAllowPopup({
+      ...details,
+      allowAuthPopups: true
+    });
+
+  let createdWindow = null;
+  class OkBrowserWindow extends MockBrowserWindow {
+    constructor(...args) {
+      super(...args);
+      createdWindow = this;
+    }
+
+    async loadURL(url) {
+      this.url = url;
+    }
+  }
+
+  const backend = new ElectronBrowserBackend({
+    BrowserWindowClass: OkBrowserWindow,
+    popupPolicy
+  });
+
+  await backend.createSession({ url: 'https://chatgpt.com/auth/login', vendorId: 'chatgpt' });
+
+  // ChatGPT's "Continue with Google" first opens an about:blank popup, then navigates
+  // it to accounts.google.com. If the wrapper drops openerUrl/frameName/disposition,
+  // shouldAllowPopup would deny the about:blank pre-open and SSO breaks.
+  const result = createdWindow.windowOpenHandler({
+    url: 'about:blank',
+    frameName: 'oauth_popup',
+    disposition: 'new-window',
+    referrer: { url: 'https://chatgpt.com/auth/login' }
+  });
+
+  assert.equal(result?.action, 'allow');
+
+  // Subsequent direct https://accounts.google.com popup must also be allowed.
+  const direct = createdWindow.windowOpenHandler({
+    url: 'https://accounts.google.com/signin/v2/identifier',
+    frameName: '',
+    disposition: 'new-window',
+    referrer: { url: 'https://chatgpt.com/auth/login' }
+  });
+  assert.equal(direct?.action, 'allow');
+
+  // An untrusted opener trying to ride the same path must still be denied.
+  const blocked = createdWindow.windowOpenHandler({
+    url: 'about:blank',
+    frameName: 'oauth_popup',
+    disposition: 'new-window',
+    referrer: { url: 'https://evil.example.com/' }
+  });
+  assert.deepEqual(blocked, { action: 'deny' });
 });
 
 test('electron-browser-backend: insertText uses native webContents.insertText when available', async () => {

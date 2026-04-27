@@ -257,6 +257,65 @@ Agentify Desktop does not bypass CAPTCHAs or use third-party solvers. If a verif
 
 If your account uses Google, Microsoft, or Apple SSO, keep auth popups enabled in the Control Center. If embedded login remains unreliable, use Chrome CDP.
 
+## Google SSO ("Continue with Google")
+
+Symptom: clicking **Continue with Google** in ChatGPT (or another vendor) shows
+`This browser or app may not be secure. Try using a different browser.`
+
+Two distinct things can cause this:
+
+1. **Popup blocking.** The Google OAuth flow opens an `about:blank` window first
+   and then navigates it to `accounts.google.com`. If that initial popup is
+   denied, the sign-in never starts. Agentify Desktop allows OAuth popups by
+   default for the supported vendor hosts (ChatGPT, Claude, Perplexity, Gemini,
+   AI Studio, Grok). Make sure **Allow auth popups** is enabled in the
+   Control Center.
+2. **Google's embedded-browser policy.** Google may still refuse to sign in
+   inside any window it identifies as an embedded webview, regardless of
+   popup state. Agentify Desktop's default Electron backend spoofs a Chrome
+   user agent and disables the `AutomationControlled` Blink feature, but
+   Google's checks evolve and sometimes still block.
+
+If you hit case 2, switch to the Chrome CDP backend, which drives a real
+Chrome/Chromium installation and is not subject to embedded-webview heuristics:
+
+```bash
+AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npx @agentify/desktop
+```
+
+Or per-launch:
+
+```bash
+npx @agentify/desktop gui --browser-backend chrome-cdp
+```
+
+You can also flip **Browser backend → Chrome CDP** in the Control Center.
+
+### Linux: where to put environment variables
+
+GUI launches on Linux (clicking a `.desktop` entry, App menu, AppImage, etc.)
+do NOT load `~/.bashrc` / `~/.zshrc`. If you only export
+`AGENTIFY_DESKTOP_BROWSER_BACKEND` in a shell rc file, terminal launches will
+see it but GUI launches will not.
+
+For GUI launches, set env vars in one of:
+
+- `~/.profile` (Bourne-shell login profile, picked up by most display managers)
+- `~/.config/environment.d/agentify-desktop.conf` (systemd user environment)
+- The `Exec=` line of a custom `.desktop` launcher, e.g.
+  `Exec=env AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npx @agentify/desktop`
+
+Log out and back in for `~/.profile` / `environment.d` changes to take effect.
+
+### Still failing?
+
+- Confirm **Allow auth popups** is on in the Control Center.
+- Try `--browser-backend chrome-cdp` (point `AGENTIFY_DESKTOP_CHROME_BIN` at
+  your Chrome/Chromium binary if auto-detection misses it).
+- For an existing signed-in profile, use Chrome CDP with
+  `AGENTIFY_DESKTOP_CHROME_PROFILE_MODE=existing` and fully quit regular
+  Chrome first so the profile is not locked.
+
 ## Local Data And Privacy
 
 Agentify Desktop is local-first:

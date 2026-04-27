@@ -190,10 +190,9 @@ async function main() {
     windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Agentify Desktop' },
     userAgent: app.userAgentFallback,
     onChanged: emitTabsChanged,
-    popupPolicy: ({ url, vendorId }) =>
+    popupPolicy: (details) =>
       shouldAllowPopup({
-        url,
-        vendorId,
+        ...details,
         allowAuthPopups: settings?.allowAuthPopups !== false
       }),
     chromeExecutablePath,
