@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
-import { ChromeCdpBrowserBackend, ChromeCdpConnection } from '../chrome-cdp-backend.mjs';
+import { ChromeCdpBrowserBackend, ChromeCdpConnection, findAvailablePort } from '../chrome-cdp-backend.mjs';
 
 class MockWebSocket {
   constructor() {
@@ -70,6 +70,63 @@ class DelayedMockWebSocket {
     else this.listeners.delete(type);
   }
 }
+
+test('chrome-cdp-backend: findAvailablePort returns a valid port number', async () => {
+  const port = await findAvailablePort();
+  assert.equal(typeof port, 'number');
+  assert.ok(port > 0 && port < 65536);
+});
+
+test('chrome-cdp-backend: start auto-selects available port when default is occupied', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentify-chrome-port-auto-'));
+  const scriptPath = path.join(tmpDir, 'fake-chrome-mock.sh');
+  await fs.writeFile(scriptPath, '#!/bin/sh\nsleep 30\n', { encoding: 'utf8', mode: 0o755 });
+
+  const backend = new ChromeCdpBrowserBackend({
+    stateDir: tmpDir,
+    executablePath: scriptPath,
+    debugPort: 9222
+  });
+  backend.startupTimeoutMs = 1000;
+  backend.startupPollMs = 50;
+
+  const originalFetch = globalThis.fetch;
+  const OriginalWebSocket = globalThis.WebSocket;
+  let fetchCalls = 0;
+  globalThis.fetch = async (url) => {
+    // Return success for port 9222 so start() detects it as occupied
+    if (url.includes('9222')) {
+      return { ok: true, async json() { return {}; } };
+    }
+    fetchCalls += 1;
+    if (fetchCalls <= 2) throw new Error('not_ready_yet');
+    return {
+      ok: true,
+      async json() {
+        return { webSocketDebuggerUrl: 'ws://127.0.0.1:45992/devtools/browser/test' };
+      }
+    };
+  };
+  globalThis.WebSocket = class {
+    constructor() {}
+    addEventListener(type, handler) {
+      if (type === 'open') queueMicrotask(() => handler({}));
+    }
+    close() {}
+  };
+
+  try {
+    await backend.start();
+    assert.notEqual(backend.debugPort, 9222, 'should have switched away from occupied port 9222');
+    assert.ok(backend.debugPort > 0 && backend.debugPort < 65536);
+    assert.equal(backend.started, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = OriginalWebSocket;
+    await backend.dispose();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
 
 test('chrome-cdp-backend: pending commands reject when websocket closes', async () => {
   const ws = new MockWebSocket();
@@ -308,6 +365,56 @@ test('chrome-cdp-backend: start cleans up spawned chrome process when CDP connec
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = OriginalWebSocket;
+  }
+});
+
+test('chrome-cdp-backend: start failure includes actionable diagnostic data (executable, args, debugPort, chromeExitCode, chromeStderr, hint)', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentify-chrome-diag-'));
+  const scriptPath = path.join(tmpDir, 'fake-chrome.sh');
+  // Fake chrome that prints a diagnostic line to stderr and exits non-zero — it never opens the debug port.
+  await fs.writeFile(
+    scriptPath,
+    '#!/bin/sh\necho "fatal: SUID sandbox helper missing" 1>&2\nexit 127\n',
+    { encoding: 'utf8', mode: 0o755 }
+  );
+
+  const backend = new ChromeCdpBrowserBackend({
+    stateDir: tmpDir,
+    executablePath: scriptPath,
+    debugPort: 45997
+  });
+
+  const originalFetch = globalThis.fetch;
+  // Always reject the /json/version probe so the start loop times out.
+  globalThis.fetch = async () => {
+    throw new Error('port_not_in_use');
+  };
+
+  try {
+    backend.startupTimeoutMs = 600;
+    backend.startupPollMs = 100;
+    let captured = null;
+    try {
+      await backend.start();
+      assert.fail('expected start() to reject');
+    } catch (error) {
+      captured = error;
+    }
+    assert.equal(captured?.message, 'chrome_cdp_unavailable');
+    const data = captured?.data || {};
+    assert.equal(data.executable, scriptPath);
+    assert.equal(data.debugPort, 45997);
+    assert.ok(Array.isArray(data.args) && data.args.includes('--remote-debugging-port=45997'),
+      `expected launch args in error.data.args, got: ${JSON.stringify(data.args)}`);
+    assert.equal(typeof data.hint, 'string');
+    assert.ok(data.hint.length > 0, 'expected non-empty hint');
+    assert.equal(data.chromeExitCode, 127, `expected captured exit code 127, got ${data.chromeExitCode}`);
+    assert.ok(typeof data.chromeStderr === 'string' && data.chromeStderr.includes('SUID sandbox helper missing'),
+      `expected captured stderr, got: ${JSON.stringify(data.chromeStderr)}`);
+    assert.equal(backend.chromeProcess, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
 

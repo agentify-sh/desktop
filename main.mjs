@@ -689,9 +689,25 @@ main().catch(async (e) => {
       }
     });
   } catch {}
-  const detail = e?.data?.hint === 'close_regular_chrome_and_retry'
-    ? 'Chrome is already using that profile. Fully quit regular Chrome, then retry Agentify Desktop.'
-    : e?.message || String(e);
+  let detail = e?.message || String(e);
+  if (e?.message === 'chrome_cdp_unavailable' && e?.data) {
+    const d = e.data;
+    const lines = [
+      'Chrome CDP backend failed to start.',
+      d.executable ? `Executable: ${d.executable}` : 'Executable: <not found>',
+      d.debugPort ? `Debug port: ${d.debugPort}` : null,
+      Array.isArray(d.args) && d.args.length ? `Launch args: ${d.args.join(' ')}` : null,
+      d.profileMode ? `Profile mode: ${d.profileMode}${d.profileName ? ` (${d.profileName})` : ''}` : null,
+      d.chromeExitCode != null ? `Chrome exit code: ${d.chromeExitCode}` : null,
+      d.chromeStderr ? `Chrome stderr (tail):\n${d.chromeStderr}` : null,
+      d.hint ? `\nSuggested fix: ${d.hint}` : null
+    ].filter(Boolean);
+    detail = lines.join('\n');
+  } else if (e?.message === 'chrome_binary_not_found' || e?.message?.startsWith?.('chrome_binary_not_found')) {
+    detail =
+      'Could not locate a Chrome/Chromium binary on this system.\n' +
+      'Install Google Chrome or Chromium, or set AGENTIFY_DESKTOP_CHROME_PATH=/absolute/path/to/chrome.';
+  }
   writeState(
     {
       ok: false,

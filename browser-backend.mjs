@@ -25,7 +25,14 @@ export function resolveChromeExecutablePath({
 } = {}) {
   const idx = Array.isArray(argv) ? argv.indexOf('--chrome-binary') : -1;
   const argValue = idx >= 0 ? argv[idx + 1] : null;
-  const raw = argValue || env.AGENTIFY_DESKTOP_CHROME_BIN || settings.chromeExecutablePath || '';
+  // _BIN is the original/documented var; _PATH is an accepted alias because users
+  // intuitively reach for "PATH" when overriding a binary location.
+  const raw =
+    argValue ||
+    env.AGENTIFY_DESKTOP_CHROME_BIN ||
+    env.AGENTIFY_DESKTOP_CHROME_PATH ||
+    settings.chromeExecutablePath ||
+    '';
   const trimmed = String(raw || '').trim();
   return trimmed || null;
 }

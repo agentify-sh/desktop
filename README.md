@@ -237,6 +237,8 @@ Optional Chrome CDP settings:
 ```bash
 AGENTIFY_DESKTOP_CHROME_DEBUG_PORT=9333 npx @agentify/desktop
 AGENTIFY_DESKTOP_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npx @agentify/desktop
+# Linux example using PATH lookup:
+AGENTIFY_DESKTOP_CHROME_PATH=$(which google-chrome-stable) AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npx @agentify/desktop
 ```
 
 You can also pass GUI flags:
@@ -262,31 +264,72 @@ If your account uses Google, Microsoft, or Apple SSO, keep auth popups enabled i
 Symptom: clicking **Continue with Google** in ChatGPT (or another vendor) shows
 `This browser or app may not be secure. Try using a different browser.`
 
-Two distinct things can cause this:
+There are two distinct issues here, and only one of them is fully under
+Agentify Desktop's control.
 
-1. **Popup blocking.** The Google OAuth flow opens an `about:blank` window first
-   and then navigates it to `accounts.google.com`. If that initial popup is
-   denied, the sign-in never starts. Agentify Desktop allows OAuth popups by
-   default for the supported vendor hosts (ChatGPT, Claude, Perplexity, Gemini,
-   AI Studio, Grok). Make sure **Allow auth popups** is enabled in the
-   Control Center.
-2. **Google's embedded-browser policy.** Google may still refuse to sign in
-   inside any window it identifies as an embedded webview, regardless of
-   popup state. Agentify Desktop's default Electron backend spoofs a Chrome
-   user agent and disables the `AutomationControlled` Blink feature, but
-   Google's checks evolve and sometimes still block.
+### What the Electron backend fix actually does
 
-If you hit case 2, switch to the Chrome CDP backend, which drives a real
-Chrome/Chromium installation and is not subject to embedded-webview heuristics:
+The Google OAuth flow opens an `about:blank` window first and then navigates
+it to `accounts.google.com`. Earlier builds of Agentify Desktop denied that
+`about:blank` pre-open, so the sign-in window never even appeared. The
+current build allows that pre-open when the opener is one of the supported
+vendor hosts (ChatGPT, Claude, Perplexity, Gemini, AI Studio, Grok). This is
+gated — untrusted openers are still denied. **This fix only addresses popup
+gating; it does not bypass Google's anti-embedded-browser checks.**
+
+Make sure **Allow auth popups** is enabled in the Control Center (it is on
+by default).
+
+### What it does NOT fix
+
+Google evaluates the window itself and may still refuse sign-in with
+*"This browser or app may not be secure"* whenever it classifies the window
+as an embedded webview. Agentify Desktop's Electron backend spoofs a Chrome
+user agent and disables the `AutomationControlled` Blink feature, but
+Google's heuristics evolve and the embedded Electron window is sometimes
+blocked anyway. **If you see the "may not be secure" message, the Electron
+backend cannot reliably resolve it on its own — you need the Chrome CDP
+backend (below).**
+
+### Chrome CDP backend — required fallback for Google SSO
+
+The Chrome CDP backend launches your real Chrome/Chromium binary over the
+DevTools Protocol. Google does not flag a real Chrome window the way it
+flags an embedded one, so SSO works there.
+
+Linux/macOS, default detection (Agentify probes common Chrome/Chromium
+binaries on `PATH`):
 
 ```bash
 AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npx @agentify/desktop
 ```
 
-Or per-launch:
+Local source checkout (this repo), equivalent to `npm start` with the env
+var:
 
 ```bash
-npx @agentify/desktop gui --browser-backend chrome-cdp
+AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npm start
+```
+
+Explicit Chrome path (useful when auto-detection picks the wrong binary or
+the user has a custom install):
+
+```bash
+AGENTIFY_DESKTOP_CHROME_PATH=$(which google-chrome-stable) \
+AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp npx @agentify/desktop
+```
+
+`AGENTIFY_DESKTOP_CHROME_PATH` is an alias of `AGENTIFY_DESKTOP_CHROME_BIN`;
+either name works. The CLI flag form is `--chrome-binary /path/to/chrome`.
+
+Reuse your already-signed-in Chrome profile (must fully quit regular Chrome
+first so the profile is unlocked):
+
+```bash
+AGENTIFY_DESKTOP_BROWSER_BACKEND=chrome-cdp \
+AGENTIFY_DESKTOP_CHROME_PROFILE_MODE=existing \
+AGENTIFY_DESKTOP_CHROME_PROFILE_NAME=Default \
+npx @agentify/desktop
 ```
 
 You can also flip **Browser backend → Chrome CDP** in the Control Center.
@@ -307,14 +350,24 @@ For GUI launches, set env vars in one of:
 
 Log out and back in for `~/.profile` / `environment.d` changes to take effect.
 
-### Still failing?
+### Diagnosing `chrome_cdp_unavailable`
 
-- Confirm **Allow auth popups** is on in the Control Center.
-- Try `--browser-backend chrome-cdp` (point `AGENTIFY_DESKTOP_CHROME_BIN` at
-  your Chrome/Chromium binary if auto-detection misses it).
-- For an existing signed-in profile, use Chrome CDP with
-  `AGENTIFY_DESKTOP_CHROME_PROFILE_MODE=existing` and fully quit regular
-  Chrome first so the profile is not locked.
+If the Chrome CDP backend itself fails to start, Agentify Desktop now shows
+the captured Chrome stderr, the executable it tried, the launch args, the
+debug port, the exit code, and a suggested fix. Common causes:
+
+- Chrome/Chromium not on `PATH` and `AGENTIFY_DESKTOP_CHROME_PATH` not set
+  → install Chrome or Chromium, or set the env var.
+- Snap-confined Chrome refusing the user-data-dir under `~/.agentify-desktop/`
+  → install the apt/dnf/Flatpak Chrome instead, or point at a non-snap
+  binary via `AGENTIFY_DESKTOP_CHROME_PATH`.
+- Profile already locked by a regular Chrome window in `existing` mode
+  → fully quit regular Chrome and retry.
+- SUID sandbox issue on some Linux distros (visible in the captured stderr)
+  → use the distribution-packaged Chrome/Chromium that bundles the helper.
+
+If you cannot get `chrome-cdp` working, the Electron backend remains usable
+for vendors and flows that do not require Google SSO.
 
 ## Local Data And Privacy
 
@@ -336,6 +389,7 @@ Anyone with access to your machine account may be able to access local session d
 - `AGENTIFY_DESKTOP_MAX_TABS`: cap parallel tabs.
 - `AGENTIFY_DESKTOP_BROWSER_BACKEND=electron|chrome-cdp`: choose browser backend.
 - `AGENTIFY_DESKTOP_CHROME_BIN`: choose Chrome/Chromium executable.
+- `AGENTIFY_DESKTOP_CHROME_PATH`: alias of `AGENTIFY_DESKTOP_CHROME_BIN` (either is accepted).
 - `AGENTIFY_DESKTOP_CHROME_DEBUG_PORT`: choose Chrome debug port.
 - `AGENTIFY_DESKTOP_CHROME_PROFILE_MODE=isolated|existing`: choose Chrome profile mode.
 - `AGENTIFY_DESKTOP_CHROME_PROFILE_NAME`: choose an existing Chrome profile name.

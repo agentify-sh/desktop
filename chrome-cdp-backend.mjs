@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 
 function sleep(ms) {
@@ -137,6 +138,17 @@ async function readJson(url) {
     throw new Error(`cdp_http_${response.status}`);
   }
   return await response.json();
+}
+
+export async function findAvailablePort(preferred = 0) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.on('error', reject);
+    server.listen(preferred || 0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
 }
 
 export class ChromeCdpConnection {
@@ -511,6 +523,9 @@ export class ChromeCdpBrowserBackend {
     this.chromeUserDataDir =
       this.profileMode === 'existing' ? defaultChromeUserDataDir() : path.join(this.stateDir, 'chrome-user-data');
     this.boundTargetDestroyed = null;
+    // Tunable for tests; default mirrors the prior 15s wait for the debug port to come up.
+    this.startupTimeoutMs = 15_000;
+    this.startupPollMs = 250;
   }
 
   async start() {
@@ -534,48 +549,73 @@ export class ChromeCdpBrowserBackend {
       portOccupied = false;
     }
     if (portOccupied) {
-      const err = new Error('chrome_debug_port_in_use');
-      err.data = {
-        debugPort: this.debugPort,
-        reason: 'refusing_to_attach_to_existing_browser'
-      };
-      throw err;
+      const autoPort = await findAvailablePort();
+      this.debugPort = autoPort;
     }
 
+    let executable = null;
+    let args = null;
+    let stderrBuf = '';
     try {
-      const executable = await findChromeExecutable(this.executablePath);
-      const args = buildChromeLaunchArgs({
+      executable = await findChromeExecutable(this.executablePath);
+      args = buildChromeLaunchArgs({
         debugPort: this.debugPort,
         userDataDir: this.chromeUserDataDir,
         profileName: this.profileName,
         startUrl: 'about:blank'
       });
       this.chromeProcess = spawn(executable, args, {
-        stdio: 'ignore'
+        // Pipe so we can surface chrome's own error output on failure; without this the
+        // user only ever sees `chrome_cdp_unavailable` with no actionable detail.
+        stdio: ['ignore', 'pipe', 'pipe']
       });
       this.chromeProcess.unref?.();
+      const captureChunk = (chunk) => {
+        try {
+          stderrBuf += String(chunk);
+          if (stderrBuf.length > 8_000) stderrBuf = stderrBuf.slice(-8_000);
+        } catch {}
+      };
+      try {
+        this.chromeProcess.stderr?.on?.('data', captureChunk);
+        this.chromeProcess.stdout?.on?.('data', captureChunk);
+        this.chromeProcess.on?.('error', (e) => captureChunk(`spawn error: ${e?.message || e}\n`));
+      } catch {}
 
       let version;
       const start = Date.now();
-      while (Date.now() - start < 15_000) {
+      while (Date.now() - start < this.startupTimeoutMs) {
         try {
           version = await readJson(`http://127.0.0.1:${this.debugPort}/json/version`);
           break;
         } catch {
-          await sleep(250);
+          await sleep(this.startupPollMs);
         }
+        if (this.chromeProcess?.exitCode != null) break;
       }
       if (!version) {
-        const err = new Error('chrome_cdp_unavailable');
-        err.data =
+        const exitCode = this.chromeProcess?.exitCode ?? null;
+        const stderrTail = stderrBuf ? stderrBuf.split('\n').slice(-20).join('\n').trim() : '';
+        const baseHint =
           this.profileMode === 'existing'
-            ? {
-                profileMode: this.profileMode,
-                profileName: this.profileName,
-                userDataDir: this.chromeUserDataDir,
-                hint: 'close_regular_chrome_and_retry'
-              }
-            : { profileMode: this.profileMode, userDataDir: this.chromeUserDataDir };
+            ? 'Close regular Chrome (so the profile is unlocked), or set AGENTIFY_DESKTOP_CHROME_PROFILE_MODE=isolated.'
+            : 'Verify Chrome/Chromium is installed and runnable, or set AGENTIFY_DESKTOP_CHROME_PATH to its absolute path.';
+        const exitHint =
+          exitCode != null
+            ? ` Chrome exited early with code ${exitCode}; review the captured stderr for the reason.`
+            : ` Chrome did not expose the remote-debugging port within ${this.startupTimeoutMs}ms.`;
+        const err = new Error('chrome_cdp_unavailable');
+        err.data = {
+          profileMode: this.profileMode,
+          profileName: this.profileName,
+          userDataDir: this.chromeUserDataDir,
+          executable,
+          args,
+          debugPort: this.debugPort,
+          chromeExitCode: exitCode,
+          chromeStderr: stderrTail,
+          hint: `${baseHint}${exitHint}`
+        };
         throw err;
       }
 

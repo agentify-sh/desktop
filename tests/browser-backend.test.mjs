@@ -44,6 +44,27 @@ test('browser-backend: resolves chrome debug port and binary path', () => {
     }),
     '/tmp/chrome'
   );
+  // AGENTIFY_DESKTOP_CHROME_PATH must be honored as an alias of AGENTIFY_DESKTOP_CHROME_BIN.
+  assert.equal(
+    resolveChromeExecutablePath({
+      argv: ['node', 'main.mjs'],
+      env: { AGENTIFY_DESKTOP_CHROME_PATH: '/usr/bin/google-chrome-stable' },
+      settings: {}
+    }),
+    '/usr/bin/google-chrome-stable'
+  );
+  // _BIN takes precedence over _PATH when both are set (back-compat with the documented var).
+  assert.equal(
+    resolveChromeExecutablePath({
+      argv: ['node', 'main.mjs'],
+      env: {
+        AGENTIFY_DESKTOP_CHROME_BIN: '/tmp/bin-chrome',
+        AGENTIFY_DESKTOP_CHROME_PATH: '/tmp/path-chrome'
+      },
+      settings: {}
+    }),
+    '/tmp/bin-chrome'
+  );
   assert.equal(
     resolveChromeProfileMode({
       argv: ['node', 'main.mjs'],
