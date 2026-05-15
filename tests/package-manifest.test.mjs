@@ -8,12 +8,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, '..');
 
-test('package manifest is publishable under @agentify/desktop with npx-friendly bins', async () => {
+test('package manifest is publishable under @kienbui-eup/trolywin with npx-friendly bins', async () => {
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
 
-  assert.equal(manifest.name, '@agentify/desktop');
+  assert.equal(manifest.name, '@kienbui-eup/trolywin');
   assert.equal(manifest.private, undefined);
   assert.equal(manifest.publishConfig?.access, 'public');
+  assert.equal(manifest.bin?.['trolywin'], 'bin/agentify-desktop.mjs');
+  assert.equal(manifest.bin?.['trolywin-gui'], 'bin/agentify-desktop.mjs');
+  assert.equal(manifest.bin?.['trolywin-mcp'], 'bin/agentify-desktop.mjs');
   assert.equal(manifest.bin?.['agentify-desktop'], 'bin/agentify-desktop.mjs');
   assert.equal(manifest.bin?.['agentify-desktop-gui'], 'bin/agentify-desktop.mjs');
   assert.equal(manifest.bin?.['agentify-desktop-mcp'], 'bin/agentify-desktop.mjs');
@@ -37,7 +40,7 @@ test('desktop bin dispatches gui and mcp modes', async () => {
 test('public README documents npm package and registered MCP tool names', async () => {
   const readme = await fs.readFile(path.join(root, 'README.md'), 'utf8');
 
-  assert.match(readme, /npx @agentify\/desktop/);
+  assert.match(readme, /npx @kienbui-eup\/trolywin/);
   assert.match(readme, /agentify_tabs/);
   assert.match(readme, /agentify_tab_create/);
   assert.match(readme, /agentify_tab_close/);

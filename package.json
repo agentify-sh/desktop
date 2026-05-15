@@ -1,11 +1,14 @@
 {
-  "name": "@agentify/desktop",
+  "name": "@kienbui-eup/trolywin",
   "version": "0.1.2",
-  "description": "Agentify Desktop control center and MCP server for local AI web sessions",
+  "description": "Troly Win Agent control center and MCP server for local AI work sessions",
   "license": "MPL-2.0",
   "type": "module",
   "main": "main.mjs",
   "bin": {
+    "trolywin": "bin/agentify-desktop.mjs",
+    "trolywin-gui": "bin/agentify-desktop.mjs",
+    "trolywin-mcp": "bin/agentify-desktop.mjs",
     "agentify-desktop": "bin/agentify-desktop.mjs",
     "agentify-desktop-gui": "bin/agentify-desktop.mjs",
     "agentify-desktop-mcp": "bin/agentify-desktop.mjs"
@@ -33,6 +36,7 @@
     "shutdown.mjs",
     "state.mjs",
     "tab-manager.mjs",
+    "troly-config.mjs",
     "ui/",
     "vendors.json",
     "watch-folder.mjs",
@@ -64,8 +68,8 @@
     "access": "public"
   },
   "build": {
-    "appId": "com.agentify.desktop",
-    "productName": "Agentify Desktop",
+    "appId": "com.troly.winagent",
+    "productName": "Troly Win Agent",
     "files": [
       "**/*",
       "!dist/**",

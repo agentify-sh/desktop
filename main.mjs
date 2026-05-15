@@ -23,6 +23,7 @@ import { getWorkspace, setWorkspace } from './orchestrator/storage.mjs';
 import { logPath as orchestratorLogPath } from './orchestrator/logging.mjs';
 import { shouldAllowPopup } from './popup-policy.mjs';
 import { cleanupRuntimeResources, createGracefulShutdown, registerShutdownSignals } from './shutdown.mjs';
+import { readTrolyConfig, trolyEndpoints, validateTrolyConfig } from './troly-config.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,10 +101,10 @@ async function main() {
     app.userAgentFallback = buildChromeUserAgent();
   } catch {}
   try {
-    process.title = 'Agentify Desktop';
+    process.title = 'Troly Win Agent';
   } catch {}
 
-  app.setName('Agentify Desktop');
+  app.setName('Troly Win Agent');
   app.setPath('userData', path.join(stateDir, 'electron-user-data'));
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
@@ -123,6 +124,15 @@ async function main() {
   const token = await ensureToken(stateDir);
   const selectors = await loadSelectors(stateDir);
   const vendors = await loadVendors();
+  const trolyConfig = readTrolyConfig(process.env);
+  const trolyValidation = validateTrolyConfig(trolyConfig, { strict: false });
+  for (const warning of trolyValidation.warnings) {
+    console.warn(`[troly-config] ${warning}`);
+  }
+  if (trolyValidation.errors.length > 0) {
+    throw new Error(`Troly config invalid: ${trolyValidation.errors.join('; ')}`);
+  }
+  const trolyUrls = trolyEndpoints(trolyConfig);
   let settings = await readSettings(stateDir);
   const browserBackendKind = resolveBrowserBackend({ settings });
   const chromeExecutablePath = resolveChromeExecutablePath({ settings });
@@ -133,7 +143,7 @@ async function main() {
 
   const notify = (body) => {
     try {
-      const n = new Notification({ title: 'Agentify Desktop', body });
+      const n = new Notification({ title: 'Troly Win Agent', body });
       n.show();
     } catch {}
   };
@@ -160,7 +170,7 @@ async function main() {
       width: 520,
       height: 720,
       show: !startMinimized,
-      title: 'Agentify Desktop',
+      title: 'Troly Win Agent',
       webPreferences: {
         sandbox: true,
         contextIsolation: true,
@@ -187,7 +197,7 @@ async function main() {
   browserBackend = await createBrowserBackend({
     kind: browserBackendKind,
     stateDir,
-    windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Agentify Desktop' },
+    windowDefaults: { width: 1100, height: 800, show: !startMinimized, title: 'Troly Win Agent' },
     userAgent: app.userAgentFallback,
     onChanged: emitTabsChanged,
     popupPolicy: ({ url, vendorId }) =>
@@ -300,6 +310,14 @@ async function main() {
     return {
       ok: true,
       vendors,
+      troly: {
+        configured: !!trolyConfig.apiBaseUrl,
+        apiBaseUrl: trolyConfig.apiBaseUrl,
+        loginUrl: trolyUrls.loginUrl,
+        keySyncUrl: trolyUrls.keySyncUrl,
+        timeoutMs: trolyConfig.timeoutMs,
+        requireTls: trolyConfig.requireTls
+      },
       tabs: tabs.listTabs(),
       defaultTabId,
       stateDir,

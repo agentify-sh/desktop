@@ -1,10 +1,12 @@
-# Agentify Desktop
+# Troly Win Agent
 
-Agentify Desktop is a local control center for AI web sessions. It lets MCP-capable tools such as Codex, Claude Code, and OpenCode use the AI subscriptions you are already signed into, while keeping browser state, files, and automation on your machine.
+Troly Win Agent is a local control center for AI web sessions. It lets MCP-capable tools such as Codex, Claude Code, and OpenCode use the AI subscriptions you are already signed into, while keeping browser state, files, and automation on your machine.
+
+This repository is currently based on the Agentify Desktop upstream codebase and is being adapted in phases for Troly-specific authentication, key sync, and workflow integration.
 
 ## What It Does
 
-- Opens a local Agentify Control Center.
+- Opens a local Troly Win Agent Control Center.
 - Manages signed-in browser sessions for ChatGPT, Claude, Perplexity, Gemini, Google AI Studio, and Grok.
 - Exposes MCP tools for querying a tab, reading a page, navigating, uploading files, saving artifacts, and reusing stable tab keys.
 - Supports parallel tabs so different agents or tasks can use separate sessions.
@@ -30,20 +32,20 @@ Agentify Desktop is a local control center for AI web sessions. It lets MCP-capa
 Start the desktop GUI without cloning this repo:
 
 ```bash
-npx @agentify/desktop
+npx @kienbui-eup/trolywin
 ```
 
 Equivalent explicit GUI command:
 
 ```bash
-npx @agentify/desktop gui
+npx @kienbui-eup/trolywin gui
 ```
 
 If you prefer a global install:
 
 ```bash
-npm install -g @agentify/desktop
-agentify-desktop
+npm install -g @kienbui-eup/trolywin
+trolywin
 ```
 
 If you want the older repo-clone and local source workflow, use [DEVELOPMENT_FROM_SOURCE.md](/Users/upwiz/crowd4gpt.com/desktop/DEVELOPMENT_FROM_SOURCE.md).
@@ -53,20 +55,20 @@ If you want the older repo-clone and local source workflow, use [DEVELOPMENT_FRO
 Run the MCP server over stdio:
 
 ```bash
-npx @agentify/desktop mcp
+npx @kienbui-eup/trolywin mcp
 ```
 
 Show newly-created browser tabs while debugging:
 
 ```bash
-npx @agentify/desktop mcp --show-tabs
+npx @kienbui-eup/trolywin mcp --show-tabs
 ```
 
 With a global install:
 
 ```bash
-agentify-desktop-mcp
-agentify-desktop-mcp --show-tabs
+trolywin-mcp
+trolywin-mcp --show-tabs
 ```
 
 ## Register With MCP Clients
@@ -74,13 +76,13 @@ agentify-desktop-mcp --show-tabs
 Codex:
 
 ```bash
-codex mcp add agentify-desktop -- npx -y @agentify/desktop mcp
+codex mcp add trolywin -- npx -y @kienbui-eup/trolywin mcp
 ```
 
 Claude Code:
 
 ```bash
-claude mcp add --transport stdio agentify-desktop -- npx -y @agentify/desktop mcp
+claude mcp add --transport stdio trolywin -- npx -y @kienbui-eup/trolywin mcp
 ```
 
 OpenCode config example:
@@ -88,9 +90,9 @@ OpenCode config example:
 ```json
 {
   "mcp": {
-    "agentify-desktop": {
+    "trolywin": {
       "type": "local",
-      "command": ["npx", "-y", "@agentify/desktop", "mcp"],
+      "command": ["npx", "-y", "@kienbui-eup/trolywin", "mcp"],
       "enabled": true
     }
   }
@@ -100,7 +102,7 @@ OpenCode config example:
 Use `--show-tabs` at the end of the command while debugging:
 
 ```bash
-codex mcp add agentify-desktop -- npx -y @agentify/desktop mcp --show-tabs
+codex mcp add trolywin -- npx -y @kienbui-eup/trolywin mcp --show-tabs
 ```
 
 ## First Run
@@ -108,7 +110,7 @@ codex mcp add agentify-desktop -- npx -y @agentify/desktop mcp --show-tabs
 1. Start the app:
 
 ```bash
-npx @agentify/desktop
+npx @kienbui-eup/trolywin
 ```
 
 2. In the Control Center, create or show a ChatGPT tab.
@@ -117,10 +119,10 @@ npx @agentify/desktop
 
 4. Register the MCP server with your CLI.
 
-5. Ask your MCP client to use Agentify:
+5. Ask your MCP client to use Troly Win Agent:
 
 ```text
-Use Agentify Desktop with tab key repo-triage.
+Use Troly Win Agent with tab key repo-triage.
 Ask ChatGPT to summarize this repo in 8 bullets and list the top 3 risky areas to change first.
 Return the answer and keep the tab key stable for follow-ups.
 ```
@@ -221,7 +223,7 @@ The tool result includes `packedContextSummary` so you can see what was included
 
 ## Browser Backend
 
-Agentify Desktop supports two browser backends:
+Troly Win Agent supports two browser backends:
 
 - `chrome-cdp`: launches or attaches to a Chrome-family browser over Chrome DevTools Protocol. This is the default and recommended backend.
 - `electron`: embedded windows managed by Agentify Desktop. Use this only as an explicit fallback.
@@ -229,22 +231,22 @@ Agentify Desktop supports two browser backends:
 Chrome CDP is the default because SSO providers commonly block embedded Electron login:
 
 ```bash
-npx @agentify/desktop
+npx @kienbui-eup/trolywin
 ```
 
 Optional Chrome CDP settings:
 
 ```bash
-AGENTIFY_DESKTOP_CHROME_DEBUG_PORT=9333 npx @agentify/desktop
-AGENTIFY_DESKTOP_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npx @agentify/desktop
+AGENTIFY_DESKTOP_CHROME_DEBUG_PORT=9333 npx @kienbui-eup/trolywin
+AGENTIFY_DESKTOP_CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npx @kienbui-eup/trolywin
 ```
 
 You can also pass GUI flags:
 
 ```bash
-npx @agentify/desktop gui --browser-backend chrome-cdp
-npx @agentify/desktop gui --browser-backend electron
-npx @agentify/desktop gui --chrome-debug-port 9333
+npx @kienbui-eup/trolywin gui --browser-backend chrome-cdp
+npx @kienbui-eup/trolywin gui --browser-backend electron
+npx @kienbui-eup/trolywin gui --chrome-debug-port 9333
 ```
 
 Chrome CDP profile modes:
@@ -254,7 +256,7 @@ Chrome CDP profile modes:
 
 ## CAPTCHA And Login Policy
 
-Agentify Desktop does not bypass CAPTCHAs or use third-party solvers. If a verification or login challenge appears, automation pauses, brings the relevant window forward, and waits for you to complete the step manually.
+Troly Win Agent does not bypass CAPTCHAs or use third-party solvers. If a verification or login challenge appears, automation pauses, brings the relevant window forward, and waits for you to complete the step manually.
 
 If your account uses Google, Microsoft, or Apple SSO, keep auth popups enabled in the Control Center. If embedded login remains unreliable, use Chrome CDP.
 

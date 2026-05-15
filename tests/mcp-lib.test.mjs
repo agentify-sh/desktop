@@ -155,8 +155,9 @@ test('mcp-lib: ensureDesktopRunning resolves bundled electron relative to deskto
     const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000 });
     assert.equal(conn.serverId, 'sid-new');
     assert.equal(path.isAbsolute(spawnedCmd), true);
-    assert.match(spawnedCmd, /desktop[\\/]+node_modules[\\/]+\.bin[\\/]+electron(?:\.cmd)?$/);
-    assert.equal(spawnedArgs?.[0]?.endsWith(path.join('desktop', 'main.mjs')), true);
+    assert.match(spawnedCmd, /node_modules[\\/]+\.bin[\\/]+electron(?:\.cmd)?$/);
+    assert.equal(path.isAbsolute(spawnedArgs?.[0] || ''), true);
+    assert.equal(path.basename(spawnedArgs?.[0] || ''), 'main.mjs');
   } finally {
     process.chdir(originalCwd);
   }

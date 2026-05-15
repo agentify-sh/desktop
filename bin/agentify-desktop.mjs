@@ -9,20 +9,20 @@ const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, '..');
 
 function printHelp() {
-  console.log(`Agentify Desktop
+  console.log(`Troly Win Agent
 
 Usage:
-  agentify-desktop [gui] [options]
-  agentify-desktop mcp [options]
+  trolywin [gui] [options]
+  trolywin mcp [options]
 
 Commands:
-  gui    Start the Agentify Desktop control center. This is the default.
-  mcp    Run the Agentify Desktop MCP server over stdio.
+  gui    Start the Troly Win Agent control center. This is the default.
+  mcp    Run the Troly Win Agent MCP server over stdio.
 
 Examples:
-  npx @agentify/desktop
-  npx @agentify/desktop mcp
-  npx @agentify/desktop mcp --show-tabs
+  npx @kienbui-eup/trolywin
+  npx @kienbui-eup/trolywin mcp
+  npx @kienbui-eup/trolywin mcp --show-tabs
 
 GUI options are passed to the Electron app.
 MCP options are passed to mcp-server.mjs.`);
@@ -48,7 +48,7 @@ function electronBin() {
     process.platform === 'win32' ? 'electron.cmd' : 'electron'
   );
   if (fs.existsSync(local)) return local;
-  return process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || 'electron';
+  return process.env.TROLYWIN_ELECTRON_BIN || process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || 'electron';
 }
 
 async function runMcp(args) {
@@ -64,19 +64,19 @@ function runGui(args) {
     shell: process.platform === 'win32'
   });
   child.on('error', (err) => {
-    console.error(`agentify-desktop failed to start: ${err.message}`);
+    console.error(`trolywin failed to start: ${err.message}`);
     process.exit(1);
   });
   child.on('exit', (code, signal) => {
     if (signal) {
-      console.error(`agentify-desktop exited from signal ${signal}`);
+      console.error(`trolywin exited from signal ${signal}`);
       process.exit(1);
     }
     process.exit(code ?? 0);
   });
 }
 
-const invokedName = path.basename(process.argv[1] || 'agentify-desktop');
+const invokedName = path.basename(process.argv[1] || 'trolywin');
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
   printHelp();
@@ -91,7 +91,7 @@ if (mode === 'help') {
 } else if (mode === 'gui') {
   runGui(args);
 } else {
-  console.error(`Unknown Agentify Desktop command: ${args[0] || argv[0]}`);
-  console.error('Run `agentify-desktop --help` for usage.');
+  console.error(`Unknown Troly Win Agent command: ${args[0] || argv[0]}`);
+  console.error('Run `trolywin --help` for usage.');
   process.exit(2);
 }
