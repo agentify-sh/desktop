@@ -149,6 +149,7 @@ let lastState = defaultState();
 let refreshInFlight = null;
 let lastRefreshAt = 0;
 let hasLiveUpdates = false;
+let tabsAreHidden = false;
 
 function tabSortWeight(tab, active, outcome) {
   if (active?.blocked) return 0;
@@ -158,6 +159,41 @@ function tabSortWeight(tab, active, outcome) {
   if (outcome?.status === 'stopped') return 4;
   if (outcome?.status === 'success') return 5;
   return tab?.protectedTab ? 7 : 6;
+}
+
+function updateTabsToggle(tabs = []) {
+  const btn = document.getElementById('btnToggleTabs');
+  if (!btn) return;
+  const hasTabs = Array.isArray(tabs) && tabs.length > 0;
+  const label = tabsAreHidden ? 'Show all managed tabs' : 'Hide all managed tabs';
+  btn.disabled = !hasTabs;
+  btn.title = hasTabs ? label : 'No managed tabs are currently open';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-pressed', tabsAreHidden ? 'true' : 'false');
+  btn.classList.toggle('tabsAreHidden', tabsAreHidden);
+}
+
+async function setAllTabsVisible(visible) {
+  const tabs = Array.isArray(lastState.tabs) ? lastState.tabs : [];
+  if (!tabs.length) {
+    statusText('No managed tabs are currently open.');
+    return;
+  }
+  let changed = 0;
+  for (const tab of tabs) {
+    const tabId = tab?.id;
+    if (!tabId) continue;
+    try {
+      await callApi(visible ? 'showTab' : 'hideTab', { tabId }, { required: true });
+      changed += 1;
+    } catch (e) {
+      statusText(`${visible ? 'Show' : 'Hide'} all stopped at ${tab.name || tab.key || tab.id}: ${e?.message || String(e)}`);
+      break;
+    }
+  }
+  tabsAreHidden = !visible;
+  updateTabsToggle(tabs);
+  statusText(`${visible ? 'Showed' : 'Hid'} ${changed} managed tab${changed === 1 ? '' : 's'}.`);
 }
 
 async function refresh() {
@@ -185,6 +221,7 @@ async function refresh() {
     }
 
     const tabs = Array.isArray(lastState.tabs) ? lastState.tabs : [];
+    updateTabsToggle(tabs);
     const runtime = lastState.runtime || { inflightQueries: 0, activeQueries: [], lastOutcomes: [] };
     const activeQueries = Array.isArray(runtime.activeQueries) ? runtime.activeQueries : [];
     const lastOutcomes = Array.isArray(runtime.lastOutcomes) ? runtime.lastOutcomes : [];
@@ -444,6 +481,7 @@ async function main() {
   }
 
   el('btnRefresh').onclick = () => refresh().catch((e) => statusText(`Refresh failed: ${e?.message || String(e)}`));
+  el('btnToggleTabs').onclick = () => setAllTabsVisible(tabsAreHidden).catch((e) => statusText(`${tabsAreHidden ? 'Show' : 'Hide'} all failed: ${e?.message || String(e)}`));
   el('btnOpenState').onclick = async () => {
     try {
       await callApi('openStateDir', undefined, { required: true });

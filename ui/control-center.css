@@ -54,6 +54,7 @@ body {
 }
 .iconOnlyHeaderBtn {
   min-width: 36px;
+  width: 36px;
   padding: 8px;
 }
 .headerBtnInner {
@@ -69,6 +70,15 @@ body {
 }
 .headerLabel {
   white-space: nowrap;
+}
+.iconShowTabs {
+  display: none;
+}
+.tabsAreHidden .iconHideTabs {
+  display: none;
+}
+.tabsAreHidden .iconShowTabs {
+  display: block;
 }
 .badge {
   display: inline-block;

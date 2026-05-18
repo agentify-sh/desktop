@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 - 2026-05-17
+
+### Fixed
+- Restored the intended icon-only Control Center header controls for opening the default tab, watch folder, artifacts folder, state folder, and refresh.
+- Added the missing show/hide-all managed tabs toggle in the Control Center header.
+- Kept the Orchestrator UI hidden from the Control Center public surface.
+
+### Verified
+- Control Center script syntax check passed.
+- Public package dry-run excludes private workflows.
+
 ## 0.2.0 - 2026-05-17
 
 ### Added
