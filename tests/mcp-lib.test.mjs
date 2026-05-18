@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { ensureToken, writeState } from '../state.mjs';
 import { ensureDesktopRunning, requestJson } from '../mcp-lib.mjs';
@@ -155,8 +156,9 @@ test('mcp-lib: ensureDesktopRunning resolves bundled electron relative to deskto
     const conn = await ensureDesktopRunning({ stateDir: dir, fetchImpl, spawnImpl, timeoutMs: 3000 });
     assert.equal(conn.serverId, 'sid-new');
     assert.equal(path.isAbsolute(spawnedCmd), true);
-    assert.match(spawnedCmd, /desktop[\\/]+node_modules[\\/]+\.bin[\\/]+electron(?:\.cmd)?$/);
-    assert.equal(spawnedArgs?.[0]?.endsWith(path.join('desktop', 'main.mjs')), true);
+    const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    assert.equal(spawnedCmd, path.join(packageRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron'));
+    assert.equal(spawnedArgs?.[0], path.join(packageRoot, 'main.mjs'));
   } finally {
     process.chdir(originalCwd);
   }

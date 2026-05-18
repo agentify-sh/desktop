@@ -11,3 +11,4 @@ yarn-error.log*
 # Local planning notes are not part of the public package/repo.
 TODO_*.md
 !TODO_fix-sso-popup-hardening.md
+private-workflows/

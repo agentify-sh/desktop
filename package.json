@@ -1,6 +1,6 @@
 {
   "name": "@agentify/desktop",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Agentify Desktop control center and MCP server for local AI web sessions",
   "license": "MPL-2.0",
   "type": "module",
@@ -11,6 +11,7 @@
     "agentify-desktop-mcp": "bin/agentify-desktop.mjs"
   },
   "files": [
+    "CHANGELOG.md",
     "README.md",
     "SECURITY.md",
     "TRADEMARKS.md",
