@@ -56,6 +56,8 @@ test('bundle-store: ignores blank attachment/context entries', async () => {
 test('bundle-store: ignores legacy relative paths when reading persisted bundles', async () => {
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentify-bundles-legacy-relative-'));
   const bundleFile = path.join(stateDir, 'bundles.json');
+  const absFile = path.join(stateDir, 'abs.txt');
+  const absDir = path.join(stateDir, 'abs-dir');
   await fs.writeFile(
     bundleFile,
     JSON.stringify(
@@ -64,8 +66,8 @@ test('bundle-store: ignores legacy relative paths when reading persisted bundles
           {
             name: 'legacy',
             promptPrefix: 'Review carefully.',
-            attachments: ['./README.md', '/tmp/abs.txt'],
-            contextPaths: ['./src', '/tmp/abs-dir']
+            attachments: ['./README.md', absFile],
+            contextPaths: ['./src', absDir]
           }
         ]
       },
@@ -76,8 +78,8 @@ test('bundle-store: ignores legacy relative paths when reading persisted bundles
   );
 
   const got = await getBundle(stateDir, 'legacy');
-  assert.equal(got?.attachments.includes('/tmp/abs.txt'), true);
-  assert.equal(got?.contextPaths.includes('/tmp/abs-dir'), true);
+  assert.equal(got?.attachments.includes(absFile), true);
+  assert.equal(got?.contextPaths.includes(absDir), true);
   assert.equal(got?.attachments.some((p) => !path.isAbsolute(p)), false);
   assert.equal(got?.contextPaths.some((p) => !path.isAbsolute(p)), false);
   assert.equal(got?.attachments.includes(path.resolve('./README.md')), false);

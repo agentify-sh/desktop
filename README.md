@@ -13,6 +13,18 @@ This repository is currently based on the Agentify Desktop upstream codebase and
 - Packs local repo/file context into prompts when requested.
 - Saves generated images/files locally so they can be reused in follow-up prompts.
 
+## Example Prompts After MCP Setup
+
+Once Agentify Desktop is running and registered with your MCP client, you can ask for workflows like:
+
+- “Use Agentify with key `repo-triage` to ask ChatGPT for a second opinion on this bug, then compare its answer with your own analysis.”
+- “Open a Perplexity tab with key `research-auth-flow` and research current OAuth best practices for desktop apps.”
+- “Send this implementation plan to Claude in a separate Agentify tab and summarize any risks it finds.”
+- “Use Agentify to generate three UI concept images, save the images as artifacts, and return the local file paths.”
+- “Open Grok and ChatGPT in separate Agentify tabs, ask both to review this API design, then compare the tradeoffs.”
+- “Pack this repo into context, ask ChatGPT to identify risky files, and save the conversation under a stable tab key for follow-ups.”
+- “Read the current ChatGPT page through Agentify and turn the conversation into actionable TODOs.”
+
 ## Requirements
 
 - Node.js 20 or newer
@@ -48,7 +60,7 @@ npm install -g @kienbui-eup/trolywin
 trolywin
 ```
 
-If you want the older repo-clone and local source workflow, use [DEVELOPMENT_FROM_SOURCE.md](/Users/upwiz/crowd4gpt.com/desktop/DEVELOPMENT_FROM_SOURCE.md).
+If you want the older repo-clone and local source workflow, use [DEVELOPMENT_FROM_SOURCE.md](DEVELOPMENT_FROM_SOURCE.md).
 
 ## MCP Server
 
@@ -156,8 +168,8 @@ Generate an image or file in a stable tab:
 {
   "tool": "agentify_query",
   "arguments": {
-    "key": "sprite-lab",
-    "prompt": "Generate 3 simple 2D pixel-art robot sprite variations on transparent backgrounds."
+    "key": "ui-concepts",
+    "prompt": "Generate 3 clean UI concept images for a compact desktop developer tool. Keep backgrounds neutral and avoid text."
   }
 }
 ```
@@ -168,7 +180,7 @@ Save the generated images locally:
 {
   "tool": "agentify_save_artifacts",
   "arguments": {
-    "key": "sprite-lab",
+    "key": "ui-concepts",
     "mode": "images",
     "maxImages": 3
   }
@@ -181,9 +193,9 @@ Reattach one of the returned file paths in a follow-up:
 {
   "tool": "agentify_query",
   "arguments": {
-    "key": "sprite-lab",
-    "prompt": "Use the attached sprite and make a damaged version with one broken eye.",
-    "attachments": ["/absolute/path/to/sprite.png"]
+    "key": "ui-concepts",
+    "prompt": "Use the attached concept image and create a more minimal variant with stronger contrast.",
+    "attachments": ["/absolute/path/to/concept.png"]
   }
 }
 ```
@@ -260,6 +272,19 @@ Troly Win Agent does not bypass CAPTCHAs or use third-party solvers. If a verifi
 
 If your account uses Google, Microsoft, or Apple SSO, keep auth popups enabled in the Control Center. If embedded login remains unreliable, use Chrome CDP.
 
+## Windows Notes
+
+Use Node.js 20 or 22 on Windows. Agentify Desktop is tested against Windows in CI, including the npm CLI launcher path.
+
+Chrome CDP is still the recommended backend on Windows because Google and Microsoft SSO can block embedded Electron login. Agentify looks for Chrome, Chromium, Brave, and Microsoft Edge in the usual install locations and on `PATH`.
+
+If Chrome CDP cannot find your browser, set the executable explicitly:
+
+```powershell
+$env:AGENTIFY_DESKTOP_CHROME_BIN = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+npx @agentify/desktop
+```
+
 ## Local Data And Privacy
 
 Agentify Desktop is local-first:
@@ -286,7 +311,7 @@ Anyone with access to your machine account may be able to access local session d
 
 ## Development From Source
 
-Source checkout, quickstart script usage, local build commands, and source-only debugging notes live in [DEVELOPMENT_FROM_SOURCE.md](/Users/upwiz/crowd4gpt.com/desktop/DEVELOPMENT_FROM_SOURCE.md).
+Source checkout, quickstart script usage, local build commands, and source-only debugging notes live in [DEVELOPMENT_FROM_SOURCE.md](DEVELOPMENT_FROM_SOURCE.md).
 
 ## Package Commands
 
@@ -306,4 +331,4 @@ npx -p @agentify/desktop agentify-desktop-mcp
 
 ## License And Trademarks
 
-The code is licensed under `MPL-2.0`. Agentify trademarks and branding are not included in that license. See [TRADEMARKS.md](/Users/upwiz/crowd4gpt.com/desktop/TRADEMARKS.md).
+The code is licensed under `MPL-2.0`. Agentify trademarks and branding are not included in that license. See [TRADEMARKS.md](TRADEMARKS.md).

@@ -131,6 +131,10 @@ export function buildChromeLaunchArgs({ debugPort, userDataDir, profileName = nu
   return args;
 }
 
+export function chromeSpawnOptions() {
+  return { stdio: 'ignore' };
+}
+
 async function readJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) {
@@ -550,10 +554,7 @@ export class ChromeCdpBrowserBackend {
         profileName: this.profileName,
         startUrl: 'about:blank'
       });
-      this.chromeProcess = spawn(executable, args, {
-        stdio: 'ignore',
-        shell: process.platform === 'win32'
-      });
+      this.chromeProcess = spawn(executable, args, chromeSpawnOptions());
       this.chromeProcess.unref?.();
 
       let version;

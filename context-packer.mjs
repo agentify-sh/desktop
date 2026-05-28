@@ -58,6 +58,10 @@ function normalizeAbsoluteInputPath(value, { cwd = process.cwd() } = {}) {
   return path.isAbsolute(raw) ? raw : path.resolve(cwd, raw);
 }
 
+function displayPath(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
 function looksBinaryByName(filePath) {
   return BINARY_EXTS.has(extnameLower(filePath));
 }
@@ -295,7 +299,7 @@ export async function prepareQueryContext({
 
   for (const file of files) {
     const rel = roots.length ? path.relative(path.dirname(roots[0].path), file.absPath) : path.basename(file.absPath);
-    const named = rel && !rel.startsWith('..') ? rel : path.basename(file.absPath);
+    const named = displayPath(rel && !rel.startsWith('..') ? rel : path.basename(file.absPath));
     if (looksBinaryByName(file.absPath)) {
       if (attachedFiles.length < maxAttachmentFiles && file.size <= maxBinaryAttachmentBytes && !attachedSet.has(file.absPath)) {
         attachedFiles.push({ path: file.absPath, reason: 'context-binary', size: file.size });

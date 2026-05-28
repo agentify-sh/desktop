@@ -53,12 +53,19 @@ function fmtOutcomeStatus(status) {
 }
 
 function num(id, fallback) {
-  const v = Number(el(id).value);
+  const raw = String(el(id).value || '').trim();
+  if (!raw) return fallback;
+  const v = Number(raw);
   return Number.isFinite(v) ? v : fallback;
 }
 
-function setNum(id, value) {
-  el(id).value = String(Number(value));
+function setNum(id, value, fallback = 0) {
+  const next = Number.isFinite(Number(value)) ? Number(value) : fallback;
+  el(id).value = String(next);
+}
+
+function setValue(id, value) {
+  el(id).value = String(value ?? '');
 }
 
 function setChecked(id, value) {
@@ -89,7 +96,7 @@ function hasApi(name) {
 async function callApi(name, args, { fallback = null, required = false } = {}) {
   const b = getBridge();
   if (typeof b?.[name] !== 'function') {
-    if (required) throw new Error(`missing_desktop_api:${name} (open Control Center inside Agentify Desktop, then restart)`);
+    if (required) throw new Error(`${name} is unavailable in this window. Restart Agentify Desktop after updating.`);
     return fallback;
   }
   try {
@@ -108,7 +115,7 @@ function defaultState() {
     tabs: [],
     defaultTabId: null,
     stateDir: '',
-    browserBackend: 'electron',
+    browserBackend: 'chrome-cdp',
     browser: null,
     runtime: { inflightQueries: 0, activeQueries: [], lastOutcomes: [] }
   };
@@ -116,23 +123,31 @@ function defaultState() {
 
 function defaultSettings() {
   return {
-    browserBackend: 'electron',
+    browserBackend: 'chrome-cdp',
     chromeDebugPort: 9222,
     chromeExecutablePath: null,
     chromeProfileMode: 'isolated',
     chromeProfileName: 'Default',
     maxInflightQueries: 2,
     maxQueriesPerMinute: 12,
-    minTabGapMs: 0,
-    minGlobalGapMs: 0,
+    minTabGapMs: 1200,
+    minGlobalGapMs: 200,
     showTabsByDefault: false,
     allowAuthPopups: true,
     acknowledgedAt: null
   };
 }
 
-function statusText(msg) {
-  el('statusLine').textContent = msg;
+function statusText(msg, tone = 'info') {
+  const line = el('messageLine');
+  line.textContent = msg;
+  line.classList.toggle('isWarn', tone === 'warn');
+  line.classList.toggle('isError', tone === 'error');
+  line.classList.toggle('isMuted', tone === 'muted');
+}
+
+function setActivityText(html) {
+  el('statusLine').innerHTML = html;
 }
 
 function isChromeCdpSelected() {
@@ -149,6 +164,56 @@ let lastState = defaultState();
 let refreshInFlight = null;
 let lastRefreshAt = 0;
 let hasLiveUpdates = false;
+let tabsAreHidden = false;
+let settingsDirty = false;
+
+function updateSaveEnabled() {
+  el('btnSaveSettings').disabled = !settingsDirty || !el('setAcknowledge').checked;
+}
+
+function markSettingsDirty() {
+  settingsDirty = true;
+  updateSaveEnabled();
+  el('settingsHint').textContent = 'Unsaved changes.';
+}
+
+function sanitizeIntegerField(input, { clamp = false } = {}) {
+  const digits = String(input.value || '').replace(/[^\d]/g, '');
+  input.value = digits;
+  if (!clamp || !digits) return;
+  const min = Number(input.dataset.min || 0);
+  const max = Number(input.dataset.max || Number.MAX_SAFE_INTEGER);
+  const next = Math.max(min, Math.min(max, Number(digits)));
+  input.value = String(next);
+}
+
+function applySettings(settings) {
+  const s = { ...defaultSettings(), ...(settings || {}) };
+  setValue('setBrowserBackend', s.browserBackend || defaultSettings().browserBackend);
+  setValue('setChromeProfileMode', s.chromeProfileMode || defaultSettings().chromeProfileMode);
+  setValue('setChromeProfileName', s.chromeProfileName || defaultSettings().chromeProfileName);
+  setNum('setMaxInflight', s.maxInflightQueries, defaultSettings().maxInflightQueries);
+  setNum('setQpm', s.maxQueriesPerMinute, defaultSettings().maxQueriesPerMinute);
+  setNum('setTabGap', s.minTabGapMs, defaultSettings().minTabGapMs);
+  setNum('setGlobalGap', s.minGlobalGapMs, defaultSettings().minGlobalGapMs);
+  setChecked('setShowTabsDefault', s.showTabsByDefault);
+  setChecked('setAllowAuthPopups', s.allowAuthPopups !== false);
+  setChecked('setAcknowledge', false);
+  settingsDirty = false;
+  updateSaveEnabled();
+  el('settingsHint').textContent = s.acknowledgedAt ? `Last acknowledged: ${s.acknowledgedAt}` : 'Using safe defaults until you acknowledge changes.';
+  syncChromeProfileFields();
+}
+
+function closeDialog(dialog) {
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.removeAttribute('open');
+}
+
+function openDialog(dialog) {
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', 'open');
+}
 
 function tabSortWeight(tab, active, outcome) {
   if (active?.blocked) return 0;
@@ -158,6 +223,49 @@ function tabSortWeight(tab, active, outcome) {
   if (outcome?.status === 'stopped') return 4;
   if (outcome?.status === 'success') return 5;
   return tab?.protectedTab ? 7 : 6;
+}
+
+function updateTabsToggle(tabs = []) {
+  const btn = document.getElementById('btnToggleTabs');
+  if (!btn) return;
+  const hasTabs = Array.isArray(tabs) && tabs.length > 0;
+  const label = tabsAreHidden ? 'Show all managed tabs' : 'Hide all managed tabs';
+  btn.disabled = !hasTabs;
+  btn.title = hasTabs ? label : 'No managed tabs are currently open';
+  btn.setAttribute('aria-label', btn.title);
+  btn.setAttribute('aria-pressed', tabsAreHidden ? 'true' : 'false');
+  btn.classList.toggle('tabsAreHidden', tabsAreHidden);
+}
+
+async function setAllTabsVisible(visible) {
+  const tabs = Array.isArray(lastState.tabs) ? lastState.tabs : [];
+  if (!tabs.length) {
+    statusText('No managed tabs are currently open.', 'muted');
+    return;
+  }
+  const bridge = getBridge();
+  if (typeof bridge?.setTabsVisible === 'function') {
+    const out = await callApi('setTabsVisible', { visible }, { required: true });
+    tabsAreHidden = !visible;
+    updateTabsToggle(tabs);
+    statusText(`${visible ? 'Showed' : 'Hid'} ${out?.changed ?? tabs.length} managed tab${(out?.changed ?? tabs.length) === 1 ? '' : 's'}.`);
+    return;
+  }
+  let changed = 0;
+  for (const tab of tabs) {
+    const tabId = tab?.id;
+    if (!tabId) continue;
+    try {
+      await callApi(visible ? 'showTab' : 'hideTab', { tabId }, { required: true });
+      changed += 1;
+    } catch (e) {
+      statusText(`${visible ? 'Show' : 'Hide'} all stopped at ${tab.name || tab.key || tab.id}: ${e?.message || String(e)}`);
+      break;
+    }
+  }
+  tabsAreHidden = !visible;
+  updateTabsToggle(tabs);
+  statusText(`${visible ? 'Showed' : 'Hid'} ${changed} managed tab${changed === 1 ? '' : 's'}.`);
 }
 
 async function refresh() {
@@ -185,6 +293,7 @@ async function refresh() {
     }
 
     const tabs = Array.isArray(lastState.tabs) ? lastState.tabs : [];
+    updateTabsToggle(tabs);
     const runtime = lastState.runtime || { inflightQueries: 0, activeQueries: [], lastOutcomes: [] };
     const activeQueries = Array.isArray(runtime.activeQueries) ? runtime.activeQueries : [];
     const lastOutcomes = Array.isArray(runtime.lastOutcomes) ? runtime.lastOutcomes : [];
@@ -417,21 +526,12 @@ async function refresh() {
     const runningSummary = ` • Running: ${activeQueries.length}`;
     const liveSummary = hasLiveUpdates ? 'Live updates on' : 'Polling every 3s';
     const refreshedSummary = lastRefreshAt ? ` • Refreshed ${new Date(lastRefreshAt).toLocaleTimeString()}` : '';
-    statusText(`Backend: ${browserSummary} • Tabs: ${tabs.length}${runningSummary} • ${liveSummary}${refreshedSummary} • State: ${lastState.stateDir || ''}`);
+    const activity = activeQueries.length
+      ? activeQueries.map((item) => `${item.tabId || 'tab'} ${String(item.phase || 'working').replace(/_/g, ' ')}`).join(' • ')
+      : 'Idle';
+    setActivityText(`<span class="activityLabel">Activity:</span> ${activity} • Backend: ${browserSummary} • Tabs: ${tabs.length}${runningSummary} • ${liveSummary}${refreshedSummary}`);
 
-  // Settings UI.
-    el('setBrowserBackend').value = settings.browserBackend || 'electron';
-    el('setChromeProfileMode').value = settings.chromeProfileMode || 'isolated';
-    el('setChromeProfileName').value = settings.chromeProfileName || 'Default';
-    setNum('setMaxInflight', settings.maxInflightQueries);
-    setNum('setQpm', settings.maxQueriesPerMinute);
-    setNum('setTabGap', settings.minTabGapMs);
-    setNum('setGlobalGap', settings.minGlobalGapMs);
-    setChecked('setShowTabsDefault', settings.showTabsByDefault);
-    setChecked('setAllowAuthPopups', settings.allowAuthPopups !== false);
-    setChecked('setAcknowledge', false);
-    el('btnSaveSettings').disabled = true;
-    el('settingsHint').textContent = settings.acknowledgedAt ? `Last acknowledged: ${settings.acknowledgedAt}` : 'Not acknowledged yet.';
+    if (!settingsDirty) applySettings(settings);
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -444,6 +544,7 @@ async function main() {
   }
 
   el('btnRefresh').onclick = () => refresh().catch((e) => statusText(`Refresh failed: ${e?.message || String(e)}`));
+  el('btnToggleTabs').onclick = () => setAllTabsVisible(tabsAreHidden).catch((e) => statusText(`${tabsAreHidden ? 'Show' : 'Hide'} all failed: ${e?.message || String(e)}`));
   el('btnOpenState').onclick = async () => {
     try {
       await callApi('openStateDir', undefined, { required: true });
@@ -530,16 +631,40 @@ async function main() {
     syncChromeProfileFields();
   };
 
-  const updateSaveEnabled = () => {
-    el('btnSaveSettings').disabled = !el('setAcknowledge').checked;
-  };
   el('setAcknowledge').onchange = updateSaveEnabled;
+  for (const id of ['setMaxInflight', 'setQpm', 'setTabGap', 'setGlobalGap']) {
+    const input = el(id);
+    input.addEventListener('input', () => {
+      sanitizeIntegerField(input);
+      markSettingsDirty();
+    });
+    input.addEventListener('blur', () => {
+      sanitizeIntegerField(input, { clamp: true });
+      markSettingsDirty();
+    });
+  }
+  for (const id of ['setShowTabsDefault', 'setAllowAuthPopups', 'setBrowserBackend', 'setChromeProfileMode', 'setChromeProfileName']) {
+    const input = el(id);
+    input.addEventListener('input', markSettingsDirty);
+    input.addEventListener('change', markSettingsDirty);
+  }
   syncChromeProfileFields();
+
+  const riskModal = el('riskModal');
+  el('btnRiskDetails').onclick = (event) => {
+    event.preventDefault();
+    openDialog(riskModal);
+  };
+  el('btnCloseRiskModal').onclick = () => closeDialog(riskModal);
+  riskModal.addEventListener('click', (event) => {
+    if (event.target === riskModal) el('btnCloseRiskModal').click();
+  });
 
   el('btnResetSettings').onclick = async () => {
     el('settingsHint').textContent = '';
     try {
       await callApi('setSettings', { reset: true }, { required: true });
+      settingsDirty = false;
       el('settingsHint').textContent = 'Reset to defaults.';
       await refresh();
     } catch (e) {
@@ -568,9 +693,11 @@ async function main() {
         { required: true }
       );
       const backendChanged = String(saved?.browserBackend || 'electron') !== String(lastState.browserBackend || 'electron');
+      settingsDirty = false;
       el('settingsHint').textContent = `Saved.${saved?.acknowledgedAt ? ` ${saved.acknowledgedAt}` : ''}${backendChanged ? ' Restart Agentify Desktop to apply backend changes.' : ''}`;
       setChecked('setAcknowledge', false);
-      el('btnSaveSettings').disabled = true;
+      updateSaveEnabled();
+      await refresh();
     } catch (e) {
       el('settingsHint').textContent = `Save failed: ${e?.message || String(e)}`;
     }
@@ -583,12 +710,12 @@ async function main() {
       b?.onTabsChanged?.(() => refresh().catch(() => {}));
     } catch (e) {
       hasLiveUpdates = false;
-      statusText(`Tabs listener unavailable: ${e?.message || String(e)}`);
+      statusText(`Live updates unavailable: ${e?.message || String(e)}. Refresh still works.`, 'warn');
       setInterval(() => refresh().catch(() => {}), 3000);
     }
   } else {
     hasLiveUpdates = false;
-    statusText('Tabs listener unavailable (compat mode). Auto-refresh every 3s.');
+    statusText('Live updates unavailable in this window. Refresh still works.', 'warn');
     setInterval(() => refresh().catch(() => {}), 3000);
   }
 

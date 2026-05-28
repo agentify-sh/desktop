@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 
-import { ChromeCdpBrowserBackend, ChromeCdpConnection } from '../chrome-cdp-backend.mjs';
+import { ChromeCdpBrowserBackend, ChromeCdpConnection, chromeSpawnOptions } from '../chrome-cdp-backend.mjs';
 
 class MockWebSocket {
   constructor() {
@@ -82,6 +82,12 @@ test('chrome-cdp-backend: pending commands reject when websocket closes', async 
   ws.close();
 
   await assert.rejects(async () => await pending, /chrome_cdp_disconnected/);
+});
+
+test('chrome-cdp-backend: Chrome spawn does not use shell on any platform', () => {
+  const opts = chromeSpawnOptions();
+  assert.equal(opts.stdio, 'ignore');
+  assert.equal(Object.hasOwn(opts, 'shell'), false);
 });
 
 test('chrome-cdp-backend: connect rejects if websocket closes before open', async () => {
@@ -266,12 +272,15 @@ test('chrome-cdp-backend: session close is best-effort when closeTarget fails', 
 
 test('chrome-cdp-backend: start cleans up spawned chrome process when CDP connect fails', async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agentify-chrome-start-fail-'));
-  const scriptPath = path.join(tmpDir, 'fake-chrome.sh');
-  await fs.writeFile(scriptPath, '#!/bin/sh\nsleep 30\n', { encoding: 'utf8', mode: 0o755 });
+  let executablePath = process.execPath;
+  if (process.platform !== 'win32') {
+    executablePath = path.join(tmpDir, 'fake-chrome.sh');
+    await fs.writeFile(executablePath, '#!/bin/sh\nsleep 30\n', { encoding: 'utf8', mode: 0o755 });
+  }
 
   const backend = new ChromeCdpBrowserBackend({
     stateDir: tmpDir,
-    executablePath: scriptPath,
+    executablePath,
     debugPort: 45999
   });
 

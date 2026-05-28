@@ -40,15 +40,36 @@ function resolveMode(invokedName, argv) {
   return { mode: 'unknown', args: argv };
 }
 
-function electronBin() {
+function electronLaunch() {
+  const override = String(process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || '').trim();
+  if (override) {
+    return {
+      command: override,
+      argsPrefix: [],
+      shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(override)
+    };
+  }
+
+  const electronCli = path.join(packageRoot, 'node_modules', 'electron', 'cli.js');
+  if (fs.existsSync(electronCli)) {
+    return { command: process.execPath, argsPrefix: [electronCli], shell: false };
+  }
+
   const local = path.join(
     packageRoot,
     'node_modules',
     '.bin',
     process.platform === 'win32' ? 'electron.cmd' : 'electron'
   );
-  if (fs.existsSync(local)) return local;
-  return process.env.TROLYWIN_ELECTRON_BIN || process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || 'electron';
+  if (fs.existsSync(local)) {
+    return {
+      command: local,
+      argsPrefix: [],
+      shell: process.platform === 'win32'
+    };
+  }
+
+  return { command: 'electron', argsPrefix: [], shell: process.platform === 'win32' };
 }
 
 async function runMcp(args) {
@@ -58,10 +79,11 @@ async function runMcp(args) {
 }
 
 function runGui(args) {
-  const child = spawn(electronBin(), [packageRoot, ...args], {
+  const launch = electronLaunch();
+  const child = spawn(launch.command, [...launch.argsPrefix, packageRoot, ...args], {
     stdio: 'inherit',
     env: process.env,
-    shell: process.platform === 'win32'
+    shell: launch.shell
   });
   child.on('error', (err) => {
     console.error(`trolywin failed to start: ${err.message}`);

@@ -54,6 +54,7 @@ body {
 }
 .iconOnlyHeaderBtn {
   min-width: 36px;
+  width: 36px;
   padding: 8px;
 }
 .headerBtnInner {
@@ -69,6 +70,15 @@ body {
 }
 .headerLabel {
   white-space: nowrap;
+}
+.iconShowTabs {
+  display: none;
+}
+.tabsAreHidden .iconHideTabs {
+  display: none;
+}
+.tabsAreHidden .iconShowTabs {
+  display: block;
 }
 .badge {
   display: inline-block;
@@ -127,6 +137,17 @@ body {
 .settingsGrid {
   grid-template-columns: 1fr 1fr;
   gap: 8px 12px;
+}
+.governorIntro {
+  margin-bottom: 14px;
+}
+.governorGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.governorInput {
+  max-width: 112px;
+  text-align: right;
 }
 .compactNum {
   max-width: 160px;
@@ -251,16 +272,95 @@ input::placeholder { color: rgba(233,236,242,0.45); }
 
 .hint { font-size: 12px; color: rgba(233,236,242,0.66); line-height: 1.35; margin-top: 8px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+.linkButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #93c5fd;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linkButton:hover { color: #bfdbfe; }
+.modal {
+  max-width: min(560px, calc(100vw - 32px));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 0;
+  background: #10131a;
+  color: #e9ecf2;
+  box-shadow: 0 22px 70px rgba(0,0,0,0.52);
+}
+.modal::backdrop { background: rgba(0,0,0,0.58); }
+.modalPanel { padding: 14px; }
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modalTitle { font-weight: 700; }
+.modalBody {
+  margin-top: 12px;
+  color: rgba(233,236,242,0.78);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.modalBody p { margin: 0 0 10px; }
+.modalBody p:last-child { margin-bottom: 0; }
+.compactBtn {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
 
 .footer {
   border-top: 1px solid rgba(255,255,255,0.08);
-  padding: 10px 14px;
+  padding: 6px 10px;
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   background: rgba(0,0,0,0.15);
+  min-height: 44px;
 }
-.status { font-size: 12px; color: rgba(233,236,242,0.65); }
+.footerStatus {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.activityLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(233,236,242,0.86);
+}
+.status {
+  font-size: 12px;
+  color: rgba(233,236,242,0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.messageLine {
+  font-size: 11px;
+  color: #93c5fd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.messageLine.isWarn {
+  color: #fbbf24;
+}
+.messageLine.isError {
+  color: #fca5a5;
+}
+.messageLine.isMuted {
+  color: rgba(233,236,242,0.52);
+}
 
 @media (max-width: 760px) {
   .header {
@@ -272,5 +372,11 @@ input::placeholder { color: rgba(233,236,242,0.45); }
   .headerBtn {
     padding: 7px 9px;
     font-size: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .governorGrid {
+    grid-template-columns: 1fr;
   }
 }

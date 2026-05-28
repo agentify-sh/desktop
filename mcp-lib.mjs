@@ -21,6 +21,28 @@ async function fileExists(p) {
   }
 }
 
+async function electronLaunch({ platform, allowFallback = false }) {
+  const override = String(process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || '').trim();
+  if (override) {
+    return {
+      command: override,
+      argsPrefix: [],
+      shell: platform === 'win32' && /\.(cmd|bat)$/i.test(override)
+    };
+  }
+
+  const electronCli = path.resolve(__dirname, 'node_modules', 'electron', 'cli.js');
+  if (await fileExists(electronCli)) {
+    return { command: process.execPath, argsPrefix: [electronCli], shell: false };
+  }
+
+  if (allowFallback) {
+    return { command: 'electron', argsPrefix: [], shell: platform === 'win32' };
+  }
+
+  throw new Error('missing_electron_binary');
+}
+
 export async function loadConnection({ stateDir }) {
   const state = await readState(stateDir);
   const token = await readToken(stateDir);
@@ -80,25 +102,11 @@ export async function ensureDesktopRunning({
     }
   }
 
-  const defaultElectronBin = path.resolve(
-    __dirname,
-    'node_modules',
-    '.bin',
-    platform === 'win32' ? 'electron.cmd' : 'electron'
-  );
   const entry = path.join(__dirname, 'main.mjs');
-  const usingCustomSpawn = spawnImpl !== spawn;
-  let electronBin = defaultElectronBin;
-  if (!(await fileExists(electronBin))) {
-    if (usingCustomSpawn) {
-      electronBin = process.env.AGENTIFY_DESKTOP_ELECTRON_BIN || 'electron';
-    } else {
-      throw new Error('missing_electron_binary');
-    }
-  }
+  const launch = await electronLaunch({ platform, allowFallback: spawnImpl !== spawn });
   if (!(await fileExists(entry))) throw new Error('missing_desktop_entry');
 
-  spawnImpl(electronBin, [entry], {
+  spawnImpl(launch.command, [...launch.argsPrefix, entry], {
     detached: true,
     stdio: 'ignore',
     env: {
@@ -106,7 +114,7 @@ export async function ensureDesktopRunning({
       AGENTIFY_DESKTOP_STATE_DIR: stateDir,
       ...(showTabs ? { AGENTIFY_DESKTOP_SHOW_TABS: 'true' } : {})
     },
-    shell: platform === 'win32'
+    shell: launch.shell
   })?.unref?.();
 
   const start = Date.now();

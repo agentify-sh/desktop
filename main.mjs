@@ -394,6 +394,37 @@ async function main() {
     return { ok: true };
   });
 
+  const setTabsVisible = async (visible) => {
+    let changed = 0;
+    for (const tab of tabs.listTabs()) {
+      try {
+        const win = tabs.getWindowById(tab.id);
+        if (visible) {
+          if (win.isMinimized?.()) win.restore?.();
+          win.show?.();
+          win.focus?.();
+        } else {
+          win.minimize?.();
+        }
+        changed += 1;
+      } catch {}
+    }
+    emitTabsChanged();
+    return { ok: true, changed };
+  };
+
+  ipcMain.handle('agentify:setTabsVisible', async (_evt, args) => {
+    return await setTabsVisible(!!args?.visible);
+  });
+
+  ipcMain.handle('agentify:showAllTabs', async () => {
+    return await setTabsVisible(true);
+  });
+
+  ipcMain.handle('agentify:hideAllTabs', async () => {
+    return await setTabsVisible(false);
+  });
+
   ipcMain.handle('agentify:closeTab', async (_evt, args) => {
     const tabId = String(args?.tabId || '').trim();
     if (!tabId) throw new Error('missing_tabId');
