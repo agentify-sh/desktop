@@ -210,9 +210,24 @@ export class ChatGPTController {
 
   async waitForPromptVisible({ timeoutMs = 10 * 60_000, pollMs = 500 } = {}) {
     const start = Date.now();
+    let evalFailures = 0;
     while (Date.now() - start < timeoutMs) {
       this.#throwIfStopRequested();
-      const st = await this.detectChallenge().catch(() => null);
+      // A dead target (window closed, session detached) makes every evaluate
+      // throw; swallowing that forever looked like a silent 10-minute hang.
+      // Surface it fast so callers can recreate the tab.
+      let st = null;
+      try {
+        st = await this.detectChallenge();
+        evalFailures = 0;
+      } catch (error) {
+        evalFailures++;
+        if (evalFailures >= 5) {
+          const err = new Error('tab_target_lost');
+          err.data = { evalFailures, lastError: String(error?.message || error) };
+          throw err;
+        }
+      }
       if (st?.blocked) await this.#enterBlockedState(st);
       if (st?.promptVisible) return st;
 
@@ -285,7 +300,8 @@ export class ChatGPTController {
         const style = window.getComputedStyle(n);
         return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
       };
-      const stop = Array.from(document.querySelectorAll(${stopSel})).find(visible);
+      const inScope = (n) => !n.closest('nav, aside, [role="navigation"], [data-testid*="history" i]');
+      const stop = Array.from(document.querySelectorAll(${stopSel})).filter(inScope).find(visible);
       if (!stop) return false;
       try {
         stop.click();
@@ -469,7 +485,11 @@ export class ChatGPTController {
     const sendSel = JSON.stringify(this.selectors.sendButton);
     const stopSel = JSON.stringify(this.selectors.stopButton);
     const res = await this.#eval(`(() => {
-      const stop = Array.from(document.querySelectorAll(${stopSel})).find((n) => {
+      // Scope stop detection to the content area: sidebar history rows can
+      // match loose selectors (e.g. aria-label*="cancel" vs a conversation
+      // titled "…Cancellations") and must never count as "generating".
+      const inScope = (n) => !n.closest('nav, aside, [role="navigation"], [data-testid*="history" i]');
+      const stop = Array.from(document.querySelectorAll(${stopSel})).filter(inScope).find((n) => {
         const r = n.getBoundingClientRect();
         const style = window.getComputedStyle(n);
         return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
@@ -706,6 +726,60 @@ export class ChatGPTController {
     await this.page.setFileInputFiles(absFiles);
   }
 
+  // Providers disable send while attachment uploads are in flight. Sending
+  // before they settle races the composer: every send path fails and the run
+  // dies with send_not_triggered while the file tiles are still spinning.
+  // Ready = a visible, enabled send button and no in-flight upload indicator
+  // in the composer, held stable across polls. Budget scales with bytes.
+  async #waitForUploadsSettled({ attachments = [], timeoutMs = null, pollMs = 500 } = {}) {
+    if (!attachments?.length) return;
+    let totalBytes = 0;
+    for (const f of attachments) {
+      try {
+        totalBytes += (await fs.stat(path.resolve(f))).size;
+      } catch {}
+    }
+    const budget = timeoutMs || Math.min(15 * 60_000, 120_000 + Math.ceil(totalBytes / 1_000_000) * 60_000);
+    await this.#emitProgress({ phase: 'uploading_files' });
+    const sendSel = JSON.stringify(this.selectors.sendButton);
+    const start = Date.now();
+    let readySince = null;
+    let lastSnap = null;
+    while (Date.now() - start < budget) {
+      this.#throwIfStopRequested();
+      const snap = await this.#eval(`(() => {
+        const visible = (n) => {
+          if (!n) return false;
+          const r = n.getBoundingClientRect();
+          const style = window.getComputedStyle(n);
+          return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        };
+        const send = Array.from(document.querySelectorAll(${sendSel})).find(visible) || null;
+        const sendEnabled = send ? !(send.disabled || String(send.getAttribute('aria-disabled') || '').toLowerCase() === 'true') : false;
+        const scope = send?.closest('form') || document.querySelector('main form') || document.querySelector('main') || document.body;
+        const uploading = !!scope.querySelector('[role=\"progressbar\"], progress, [aria-busy=\"true\"]');
+        const failed = /failed to upload|upload failed|couldn't upload|could not upload|error uploading/i.test((scope.innerText || '').slice(0, 4000));
+        return { sendEnabled, uploading, failed };
+      })()`).catch(() => null);
+      lastSnap = snap;
+      if (snap?.failed) {
+        const err = new Error('attachment_upload_failed');
+        err.data = { attachments: attachments.length, totalBytes };
+        throw err;
+      }
+      if (snap && snap.sendEnabled && !snap.uploading) {
+        if (readySince == null) readySince = Date.now();
+        else if (Date.now() - readySince >= 900) return;
+      } else {
+        readySince = null;
+      }
+      await sleep(pollMs);
+    }
+    const err = new Error('attachment_upload_timeout');
+    err.data = { attachments: attachments.length, totalBytes, waitedMs: Date.now() - start, last: lastSnap };
+    throw err;
+  }
+
   async #waitForAssistantStable({ timeoutMs = 5 * 60_000, stableMs = 1500, pollMs = 400 } = {}) {
     await this.#emitProgress({ phase: 'waiting_for_response', blocked: false, blockedKind: null, blockedTitle: null });
     const assistantSel = JSON.stringify(this.selectors.assistantMessage);
@@ -716,11 +790,13 @@ export class ChatGPTController {
     let lastChange = Date.now();
     let stopGoneAt = null;
     let continueClicks = 0;
+    let baseCount = null;
 
     while (Date.now() - start < timeoutMs) {
       this.#throwIfStopRequested();
       const snap = await this.#eval(`(() => {
-        const stop = !!document.querySelector(${stopSel});
+        const inScope = (n) => !n.closest('nav, aside, [role="navigation"], [data-testid*="history" i]');
+        const stop = Array.from(document.querySelectorAll(${stopSel})).some(inScope);
         const send = Array.from(document.querySelectorAll(${sendSel})).find((n) => {
           const r = n.getBoundingClientRect();
           const style = window.getComputedStyle(n);
@@ -734,7 +810,7 @@ export class ChatGPTController {
         const hasContinue = Array.from(document.querySelectorAll('button, a')).some(b => /continue generating/i.test((b.textContent||'').trim()));
         const hasRegenerate = Array.from(document.querySelectorAll('button, a')).some(b => /regenerate/i.test((b.textContent||'').trim()));
         const hasError = /something went wrong|try again|error/i.test(txt) && txt.length < 500;
-        return { stop, sendEnabled, txt, count: nodes.length, usedFallback: !lastNode, hasError, hasContinue, hasRegenerate };
+        return { stop, sendVisible: !!send, sendEnabled, txt, count: nodes.length, usedFallback: !lastNode, hasError, hasContinue, hasRegenerate };
       })()`);
 
       const txt = String(snap?.txt || '');
@@ -742,10 +818,16 @@ export class ChatGPTController {
         last = txt;
         lastChange = Date.now();
       }
+      // The assistant-message count when we started waiting; a real reply is a
+      // NEW node beyond this baseline (reasoning models can "think" for minutes
+      // before any text appears — pre-existing page text must not count).
+      if (baseCount == null && snap) baseCount = snap.count || 0;
+      const newMsg = snap ? (snap.count || 0) > (baseCount || 0) : false;
 
-      // Some providers expose unrelated visible "stop/cancel" controls.
-      // Treat "generating" as stop-visible only when send is not enabled.
-      const generating = !!snap?.stop && !snap?.sendEnabled;
+      // Generating whenever a stop control is visible and no enabled send
+      // button is; providers replace send with stop while responding, so
+      // "no send button" must NOT read as send-enabled.
+      const generating = !!snap?.stop && !(snap?.sendVisible && snap?.sendEnabled);
       if (generating) stopGoneAt = null;
       else if (stopGoneAt == null) stopGoneAt = Date.now();
 
@@ -763,11 +845,15 @@ export class ChatGPTController {
         continue;
       }
 
-      const readyByNodes = (snap?.count || 0) > 0;
-      const fallbackWaited = !!snap?.usedFallback && (Date.now() - start >= 2500);
+      // A reply counts when a NEW assistant node appeared; the old count>0 test
+      // accepted pre-existing thread content as "the reply". Escape hatches:
+      // selector-less providers (usedFallback) after a long grace, and a
+      // baseline-glitch guard after 2 minutes of stable, non-generating quiet.
+      const readyByNodes = newMsg || ((snap?.count || 0) > 0 && Date.now() - start >= 120_000);
+      const fallbackWaited = !!snap?.usedFallback && (Date.now() - start >= 45_000);
       const fallbackStableLongEnough = txt.length > 0 && (Date.now() - lastChange >= Math.max(dynamicStableMs, 5000));
       const done =
-        (!generating && stopGoneLongEnough && snap?.sendEnabled && stable && txt.length > 0 && (readyByNodes || fallbackWaited)) ||
+        (!generating && stopGoneLongEnough && stable && txt.length > 0 && (readyByNodes || fallbackWaited)) ||
         (!generating && fallbackStableLongEnough && (readyByNodes || fallbackWaited));
       if (done) {
         const extra = await this.#eval(`(() => {
@@ -800,6 +886,7 @@ export class ChatGPTController {
       await this.ensureReady({ timeoutMs });
       await this.#attachFiles(attachments);
       await this.#typePrompt(prompt);
+      await this.#waitForUploadsSettled({ attachments });
       await this.#clickSend();
       return await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
     } finally {

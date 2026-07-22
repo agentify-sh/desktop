@@ -403,6 +403,20 @@ class ChromeCdpPageAdapter {
   }
 
   async setFileInputFiles(files) {
+    // Pick the input whose `accept` is compatible with the files. Sites ship
+    // several file inputs (e.g. chatgpt.com: #upload-files, #upload-photos
+    // accept="image/*", #upload-camera accept="image/*"); feeding documents to
+    // an image-only input routes them into the site's image pipeline, whose
+    // decode fails and leaves the attachment stuck at 0% forever.
+    const isImagePath = (p) => /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg|avif|tiff?)$/i.test(String(p));
+    const allImages = files.every(isImagePath);
+    const acceptCompatible = (accept) => {
+      const a = String(accept || '').trim().toLowerCase();
+      if (!a || a === '*' || a.includes('*/*')) return true;
+      const imageOnly = a.split(',').every((part) => part.trim().startsWith('image/') || /^\.(png|jpe?g|gif|webp|bmp|heic|heif|svg|avif|tiff?)$/.test(part.trim()));
+      return imageOnly ? allImages : true;
+    };
+
     let lastNodeIds = [];
     for (let attempt = 0; attempt < 10; attempt++) {
       const { root } = await this.client.send('DOM.getDocument', { depth: 12, pierce: true }, this.sessionId);
@@ -414,8 +428,22 @@ class ChromeCdpPageAdapter {
         continue;
       }
 
+      const infos = [];
+      for (const nodeId of nodeIds) {
+        let accept = '';
+        try {
+          const attrs = await this.client.send('DOM.getAttributes', { nodeId }, this.sessionId);
+          const list = Array.isArray(attrs?.attributes) ? attrs.attributes : [];
+          for (let i = 0; i + 1 < list.length; i += 2) {
+            if (list[i] === 'accept') accept = list[i + 1];
+          }
+        } catch {}
+        infos.push({ nodeId, accept });
+      }
+      const ordered = [...infos.filter((i) => acceptCompatible(i.accept)), ...infos.filter((i) => !acceptCompatible(i.accept))];
+
       let lastErr = null;
-      for (const nodeId of [...nodeIds].reverse()) {
+      for (const { nodeId } of ordered) {
         try {
           await this.client.send('DOM.setFileInputFiles', { nodeId, files }, this.sessionId);
           lastErr = null;
@@ -594,6 +622,10 @@ export class ChromeCdpBrowserBackend {
         } catch {}
         this.onChanged?.();
       });
+      // Chrome only emits Target.targetDestroyed when discovery is enabled.
+      // Without this, closed tabs were never pruned and later queries hung
+      // on dead sessions until their full timeout.
+      await this.client.send('Target.setDiscoverTargets', { discover: true }).catch(() => {});
       this.started = true;
       return this.getState();
     } catch (error) {

@@ -76,6 +76,19 @@ class ElectronPageAdapter {
       throw err;
     }
 
+    // Pick the input whose `accept` is compatible with the files — feeding
+    // documents to an image-only input (e.g. chatgpt.com's #upload-camera)
+    // routes them into the site's image pipeline, whose decode fails and
+    // leaves the attachment stuck at 0% forever.
+    const isImagePath = (p) => /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg|avif|tiff?)$/i.test(String(p));
+    const allImages = files.every(isImagePath);
+    const acceptCompatible = (accept) => {
+      const a = String(accept || '').trim().toLowerCase();
+      if (!a || a === '*' || a.includes('*/*')) return true;
+      const imageOnly = a.split(',').every((part) => part.trim().startsWith('image/') || /^\.(png|jpe?g|gif|webp|bmp|heic|heif|svg|avif|tiff?)$/.test(part.trim()));
+      return imageOnly ? allImages : true;
+    };
+
     try {
       let lastNodeIds = [];
       for (let attempt = 0; attempt < 10; attempt++) {
@@ -88,8 +101,22 @@ class ElectronPageAdapter {
           continue;
         }
 
+        const infos = [];
+        for (const nodeId of nodeIds) {
+          let accept = '';
+          try {
+            const attrs = await wc.debugger.sendCommand('DOM.getAttributes', { nodeId });
+            const list = Array.isArray(attrs?.attributes) ? attrs.attributes : [];
+            for (let i = 0; i + 1 < list.length; i += 2) {
+              if (list[i] === 'accept') accept = list[i + 1];
+            }
+          } catch {}
+          infos.push({ nodeId, accept });
+        }
+        const ordered = [...infos.filter((i) => acceptCompatible(i.accept)), ...infos.filter((i) => !acceptCompatible(i.accept))];
+
         let lastErr = null;
-        for (const nodeId of [...nodeIds].reverse()) {
+        for (const { nodeId } of ordered) {
           try {
             await wc.debugger.sendCommand('DOM.setFileInputFiles', { nodeId, files });
             lastErr = null;
