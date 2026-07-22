@@ -119,6 +119,7 @@ async function cmdQuery(conn, opts) {
     await fs.access(abs);
     attachments.push(abs);
   }
+  const timeoutMs = Number.isFinite(opts.timeout) ? opts.timeout : 600_000;
   const data = await requestJson({
     ...conn,
     method: 'POST',
@@ -127,8 +128,9 @@ async function cmdQuery(conn, opts) {
       ...tabBody(opts),
       prompt,
       attachments,
-      timeoutMs: Number.isFinite(opts.timeout) ? opts.timeout : 600_000
-    }
+      timeoutMs
+    },
+    timeoutMs: timeoutMs + 120_000   // client margin over the server budget (honored once requestJson supports it)
   });
   const text = String(data?.result?.text ?? '');
   if (opts.out) await fs.writeFile(path.resolve(opts.out), text + (text.endsWith('\n') ? '' : '\n'));
@@ -166,7 +168,14 @@ async function cmdTabs(conn, opts) {
 }
 
 async function cmdStatus(conn, opts) {
-  const data = await requestJson({ ...conn, method: 'GET', path: '/status' });
+  let data;
+  try {
+    data = await requestJson({ ...conn, method: 'GET', path: '/status' });
+  } catch (error) {
+    if (error?.data?.body?.error !== 'tab_not_found') throw error;
+    const tabs = await requestJson({ ...conn, method: 'GET', path: '/tabs' });   // server fine, just no default tab yet
+    data = { ok: true, tabs: tabs?.tabs || [], activeQuery: null };
+  }
   if (opts.json) process.stdout.write(JSON.stringify(data, null, 2) + '\n');
   else {
     const q = data?.activeQuery;
