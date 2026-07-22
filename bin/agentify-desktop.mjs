@@ -18,11 +18,14 @@ Usage:
 Commands:
   gui    Start the Agentify Desktop control center. This is the default.
   mcp    Run the Agentify Desktop MCP server over stdio.
+  cli    Run one-shot commands from the shell (query/send/read/tabs/status/stop).
 
 Examples:
   npx @agentify/desktop
   npx @agentify/desktop mcp
   npx @agentify/desktop mcp --show-tabs
+  npx @agentify/desktop cli query --prompt "Summarize this" --attach notes.md
+  npx @agentify/desktop cli query --key myproject --prompt-file q.md --out reply.md
 
 GUI options are passed to the Electron app.
 MCP options are passed to mcp-server.mjs.`);
@@ -36,6 +39,7 @@ function resolveMode(invokedName, argv) {
   if (!first || first.startsWith('-')) return { mode: 'gui', args: argv };
   if (first === 'gui' || first === 'start') return { mode: 'gui', args: rest };
   if (first === 'mcp') return { mode: 'mcp', args: rest };
+  if (first === 'cli') return { mode: 'cli', args: rest };
   if (first === 'help') return { mode: 'help', args: rest };
   return { mode: 'unknown', args: argv };
 }
@@ -110,6 +114,9 @@ if (mode === 'help') {
   printHelp();
 } else if (mode === 'mcp') {
   await runMcp(args);
+} else if (mode === 'cli') {
+  const { runCli } = await import(pathToFileURL(path.join(packageRoot, 'cli.mjs')).href);
+  process.exit(await runCli(args));
 } else if (mode === 'gui') {
   runGui(args);
 } else {
