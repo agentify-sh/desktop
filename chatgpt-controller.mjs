@@ -446,7 +446,8 @@ export class ChatGPTController {
           const style = window.getComputedStyle(n);
           return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
         };
-        const stopVisible = Array.from(document.querySelectorAll(${stopSel})).some(visible);
+        const inScope = (n) => !n.closest('nav, aside, [role="navigation"], [data-testid*="history" i]');
+        const stopVisible = Array.from(document.querySelectorAll(${stopSel})).filter(inScope).some(visible);
         const send = Array.from(document.querySelectorAll(${sendSel})).find(visible);
         const sendDisabled = !!send && !!send.disabled;
 
