@@ -889,7 +889,7 @@ export class ChatGPTController {
       await this.#typePrompt(prompt);
       await this.#waitForUploadsSettled({ attachments });
       await this.#clickSend();
-      return await this.#waitForAssistantStable({ timeoutMs: Math.min(timeoutMs, 8 * 60_000) });
+      return await this.#waitForAssistantStable({ timeoutMs });   // reasoning models can think for an hour
     } finally {
       if (this.currentRun === run) this.currentRun = null;
     }

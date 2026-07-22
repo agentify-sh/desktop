@@ -57,31 +57,70 @@ async function validateConn({ conn, fetchImpl }) {
   if (!health.ok) return { ok: false, reason: 'health_not_ok' };
   if (conn.serverId && healthData?.serverId && conn.serverId !== healthData.serverId) return { ok: false, reason: 'server_id_mismatch' };
 
-  // 2) Authenticated status: ensures token matches and the server is ours.
+  // 2) Authenticated status: only AUTH failures invalidate a live server —
+  // /status can carry tab-level errors (e.g. tab_not_found before any default
+  // tab exists) while the server is healthy and ours.
   const status = await fetchImpl(`${conn.baseUrl}/status`, { headers: { authorization: `Bearer ${conn.token}` } });
+  if (status.status === 401 || status.status === 403) return { ok: false, reason: 'unauthorized' };
   const statusData = await status.json().catch(() => ({}));
-  if (!status.ok) return { ok: false, reason: 'status_not_ok', status: status.status };
   if (statusData?.error === 'unauthorized') return { ok: false, reason: 'unauthorized' };
-  if (statusData?.ok !== true) return { ok: false, reason: 'unexpected_status_payload' };
   return { ok: true, serverId: healthData?.serverId || null };
 }
 
-export async function requestJson({ baseUrl, token, method, path: pth, body, fetchImpl = fetch }) {
-  const res = await fetchImpl(`${baseUrl}${pth}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${token}`
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.error) {
-    const err = new Error(data?.message || data?.error || `http_${res.status}`);
-    err.data = { status: res.status, body: data };
-    throw err;
+// Default transport is node:http, NOT fetch: Node's built-in fetch (undici)
+// enforces a ~5-minute headers timeout, which kills long-blocking calls like
+// /query while a reasoning model thinks for up to an hour. Passing a custom
+// fetchImpl (tests) keeps the fetch-shaped path.
+export async function requestJson({ baseUrl, token, method, path: pth, body, fetchImpl = null, timeoutMs = 0 }) {
+  if (fetchImpl) {
+    const res = await fetchImpl(`${baseUrl}${pth}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.error) {
+      const err = new Error(data?.message || data?.error || `http_${res.status}`);
+      err.data = { status: res.status, body: data };
+      throw err;
+    }
+    return data;
   }
-  return data;
+
+  const { request } = await import('node:http');
+  return await new Promise((resolve, reject) => {
+    const payload = body ? JSON.stringify(body) : null;
+    const u = new URL(baseUrl + pth);
+    const req = request({
+      host: u.hostname,
+      port: u.port,
+      path: u.pathname + u.search,
+      method,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`,
+        ...(payload ? { 'content-length': Buffer.byteLength(payload) } : {})
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(data); } catch {}
+        if (res.statusCode >= 200 && res.statusCode < 300 && !parsed?.error) return resolve(parsed);
+        const err = new Error(parsed?.message || parsed?.error || `http_${res.statusCode}`);
+        err.data = { status: res.statusCode, body: parsed };
+        reject(err);
+      });
+    });
+    if (timeoutMs > 0) req.setTimeout(timeoutMs, () => req.destroy(new Error(`client_timeout_${timeoutMs}ms`)));
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
 }
 
 export async function ensureDesktopRunning({
