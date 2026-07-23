@@ -323,7 +323,25 @@ export class ChatGPTController {
   }
 
   async #typeHuman(text) {
-    for (const ch of String(text)) {
+    const value = String(text);
+    // Human-paced typing is fine for short prompts, but at 12-45ms/char a
+    // large prompt takes half an hour — during which a stray Enter can send a
+    // PARTIAL message and the eventual clickSend hits already_generating.
+    // Large prompts are inserted in bulk (like a paste), with a short typed
+    // tail to keep the composer's input events realistic.
+    if (value.length > 1500) {
+      const head = value.slice(0, -20);
+      const tail = value.slice(-20);
+      await this.page.insertText(head);
+      await sleep(jitter(80, 200));
+      for (const ch of tail) {
+        this.#throwIfStopRequested();
+        await this.page.insertText(ch);
+        await sleep(jitter(12, 45));
+      }
+      return;
+    }
+    for (const ch of value) {
       this.#throwIfStopRequested();
       await this.page.insertText(ch);
       await sleep(jitter(12, 45));
