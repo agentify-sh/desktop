@@ -2262,7 +2262,7 @@ test('http-api: oversized numeric overrides are clamped to bounded ceilings', as
     }
   });
   assert.equal(queried.res.status, 200);
-  assert.equal(seen.query[0], 30 * 60_000);
+  assert.equal(seen.query[0], 2 * 60 * 60_000);
   assert.equal(queried.data.packedContextBudget.maxContextChars, 500_000);
   assert.equal(queried.data.packedContextBudget.maxFiles, 500);
   assert.equal(queried.data.packedContextBudget.maxFileChars, 100_000);

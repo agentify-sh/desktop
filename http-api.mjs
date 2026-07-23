@@ -820,7 +820,8 @@ export function startHttpApi({
 
       if (url.pathname === '/query' && req.method === 'POST') {
         const body = await parseBody(req, { maxBytes: 5_000_000 });
-        const timeoutMs = positiveIntOr(body.timeoutMs, 10 * 60_000, 30 * 60_000);
+        // Reasoning models can take an hour before responding; allow up to 2h.
+        const timeoutMs = positiveIntOr(body.timeoutMs, 10 * 60_000, 2 * 60 * 60_000);
         const prompt = String(body.prompt || '');
         if (!prompt.trim()) throw new Error('missing_prompt');
         if (prompt.length > 200_000) throw new Error('prompt_too_large');
