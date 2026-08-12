@@ -416,7 +416,7 @@ export class ChatGPTController {
     await this.#typeHuman(prompt);
   }
 
-  async #waitForSendSignal({ timeoutMs = 1800, pollMs = 120 } = {}) {
+  async #waitForSendSignal({ timeoutMs = 1800, pollMs = 120, baselineUserCount = null } = {}) {
     const stopSel = JSON.stringify(this.selectors.stopButton);
     const sendSel = JSON.stringify(this.selectors.sendButton);
     const promptSel = JSON.stringify(this.selectors.promptTextarea);
@@ -455,10 +455,11 @@ export class ChatGPTController {
             break;
           }
         }
-        return { stopVisible, sendDisabled, promptLen };
+        const userCount = document.querySelectorAll('[data-message-author-role="user"]').length;
+        return { stopVisible, sendDisabled, promptLen, userCount };
       })()`);
 
-      if (snap?.stopVisible || snap?.sendDisabled || snap?.promptLen === 0) return true;
+      if ((Number.isFinite(baselineUserCount) && snap?.userCount > baselineUserCount) || snap?.stopVisible || snap?.sendDisabled || snap?.promptLen === 0) return true;
       await sleep(pollMs);
     }
     return false;
@@ -602,13 +603,14 @@ export class ChatGPTController {
       throw err;
     }
 
+    const baselineUserCount = await this.#eval(`document.querySelectorAll('[data-message-author-role="user"]').length`).catch(() => null);
     let sent = false;
     if (res?.rect?.w > 0 && res?.rect?.h > 0) {
       this.#throwIfStopRequested();
       const cx = Math.round(res.rect.x + res.rect.w / 2);
       const cy = Math.round(res.rect.y + res.rect.h / 2);
       await this.#clickAt(cx, cy);
-      sent = await this.#waitForSendSignal({ timeoutMs: 2200, pollMs: 120 });
+      sent = await this.#waitForSendSignal({ timeoutMs: 2200, pollMs: 120, baselineUserCount });
     }
 
     if (!sent && !res?.fallbackEnter) {
@@ -653,7 +655,7 @@ export class ChatGPTController {
         }
         return false;
       })()`);
-      sent = await this.#waitForSendSignal({ timeoutMs: 1400, pollMs: 120 });
+      sent = await this.#waitForSendSignal({ timeoutMs: 1400, pollMs: 120, baselineUserCount });
     }
 
     if (!sent) {
@@ -677,7 +679,7 @@ export class ChatGPTController {
         this.#throwIfStopRequested();
         await sleep(jitter(25, 90));
         await this.#sendKey(key, { modifiers });
-        sent = await this.#waitForSendSignal({ timeoutMs: 1500, pollMs: 120 });
+        sent = await this.#waitForSendSignal({ timeoutMs: 1500, pollMs: 120, baselineUserCount });
         if (sent) break;
       }
     }
@@ -727,14 +729,19 @@ export class ChatGPTController {
           return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
         });
         const sendEnabled = send ? !send.disabled : true;
-        const nodes = Array.from(document.querySelectorAll(${assistantSel}));
+        const isChatgpt = String(location.hostname || '').includes('chatgpt.com');
+        const primaryNodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+        const nodes = isChatgpt ? primaryNodes : (primaryNodes.length ? primaryNodes : Array.from(document.querySelectorAll(${assistantSel})));
         const lastNode = nodes[nodes.length - 1];
         const fallbackMainText = ((document.querySelector('main') || document.body)?.innerText || '').trim();
-        const txt = (lastNode?.innerText || fallbackMainText).trim();
+        const assistantText = String(lastNode?.innerText || lastNode?.textContent || '').trim();
+        const txt = lastNode ? assistantText : (isChatgpt ? '' : fallbackMainText);
         const hasContinue = Array.from(document.querySelectorAll('button, a')).some(b => /continue generating/i.test((b.textContent||'').trim()));
         const hasRegenerate = Array.from(document.querySelectorAll('button, a')).some(b => /regenerate/i.test((b.textContent||'').trim()));
         const hasError = /something went wrong|try again|error/i.test(txt) && txt.length < 500;
-        return { stop, sendEnabled, txt, count: nodes.length, usedFallback: !lastNode, hasError, hasContinue, hasRegenerate };
+        const assistantTurn = lastNode?.closest?.('section[data-turn="assistant"]') || null;
+        const assistantActionsReady = !isChatgpt || !!assistantTurn?.querySelector?.('[data-testid="copy-turn-action-button"]');
+        return { stop, sendEnabled, txt, count: nodes.length, usedFallback: !lastNode, hasError, hasContinue, hasRegenerate, isChatgpt, assistantActionsReady };
       })()`);
 
       const txt = String(snap?.txt || '');
@@ -744,8 +751,11 @@ export class ChatGPTController {
       }
 
       // Some providers expose unrelated visible "stop/cancel" controls.
-      // Treat "generating" as stop-visible only when send is not enabled.
-      const generating = !!snap?.stop && !snap?.sendEnabled;
+      // Current ChatGPT can also expose transient assistant placeholder text such as
+      // "Thinking" before the real response body arrives. Neither state is complete.
+      const transientAssistant = /^(thinking|working|searching|browsing)(?:[.…]{0,3})$/i.test(txt.trim());
+      const chatgptStillFinalizing = !!snap?.isChatgpt && !snap?.assistantActionsReady;
+      const generating = (!!snap?.stop && !snap?.sendEnabled) || transientAssistant || chatgptStillFinalizing;
       if (generating) stopGoneAt = null;
       else if (stopGoneAt == null) stopGoneAt = Date.now();
 
@@ -771,7 +781,8 @@ export class ChatGPTController {
         (!generating && fallbackStableLongEnough && (readyByNodes || fallbackWaited));
       if (done) {
         const extra = await this.#eval(`(() => {
-          const nodes = Array.from(document.querySelectorAll(${assistantSel}));
+          const primaryNodes = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+          const nodes = primaryNodes.length ? primaryNodes : Array.from(document.querySelectorAll(${assistantSel}));
           const lastNode = nodes[nodes.length - 1];
           const codes = Array.from(lastNode?.querySelectorAll('pre code') || []).map(c => {
             const cls = String(c.className || '');
