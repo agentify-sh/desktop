@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { ensureToken, writeState } from '../state.mjs';
 import { ensureDesktopRunning, requestJson } from '../mcp-lib.mjs';
@@ -136,6 +136,51 @@ test('mcp-lib: Windows spawn uses Node-hosted Electron CLI without shell', async
   assert.equal(spawnedArgs?.[0], path.join(packageRoot, 'node_modules', 'electron', 'cli.js'));
   assert.equal(spawnedArgs?.[1], path.join(packageRoot, 'main.mjs'));
   assert.equal(spawnShell, false);
+});
+
+test('mcp-lib: ensureDesktopRunning resolves Electron from a hoisted parent node_modules', async () => {
+  const fixtureRoot = await tempDir();
+  const desktopRoot = path.join(fixtureRoot, 'node_modules', '@agentify', 'desktop');
+  const electronRoot = path.join(fixtureRoot, 'node_modules', 'electron');
+  await fs.mkdir(desktopRoot, { recursive: true });
+  await fs.mkdir(electronRoot, { recursive: true });
+
+  const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  await fs.copyFile(path.join(sourceRoot, 'mcp-lib.mjs'), path.join(desktopRoot, 'mcp-lib.mjs'));
+  await fs.copyFile(path.join(sourceRoot, 'state.mjs'), path.join(desktopRoot, 'state.mjs'));
+  await fs.writeFile(path.join(desktopRoot, 'main.mjs'), '// fixture desktop entry\n', 'utf8');
+  await fs.writeFile(path.join(electronRoot, 'package.json'), JSON.stringify({ name: 'electron', version: '0.0.0' }), 'utf8');
+  await fs.writeFile(path.join(electronRoot, 'cli.js'), '// fixture\n', 'utf8');
+
+  const fixtureMcp = await import(`${pathToFileURL(path.join(desktopRoot, 'mcp-lib.mjs')).href}?fixture=${Date.now()}`);
+  const fixtureState = await import(`${pathToFileURL(path.join(desktopRoot, 'state.mjs')).href}?fixture=${Date.now()}`);
+  const stateDir = await tempDir();
+  const token = 't';
+  await fixtureState.ensureToken(stateDir);
+  await fs.writeFile(path.join(stateDir, 'token.txt'), `${token}\n`, 'utf8');
+  await fixtureState.writeState({ ok: true, port: 12345, serverId: 'sid-old' }, stateDir);
+
+  let fetchServerId = 'sid-wrong';
+  let spawnedCmd = null;
+  let spawnedArgs = null;
+  const conn = await fixtureMcp.ensureDesktopRunning({
+    stateDir,
+    fetchImpl: makeFetch({ getServerId: () => fetchServerId, acceptToken: token }),
+    platform: 'win32',
+    spawnImpl: (cmd, args) => {
+      spawnedCmd = cmd;
+      spawnedArgs = args;
+      fetchServerId = 'sid-new';
+      void fixtureState.writeState({ ok: true, port: 12345, serverId: 'sid-new' }, stateDir);
+      return { unref() {} };
+    },
+    timeoutMs: 3000
+  });
+
+  assert.equal(conn.serverId, 'sid-new');
+  assert.equal(spawnedCmd, process.execPath);
+  assert.equal(spawnedArgs?.[0], path.join(electronRoot, 'cli.js'));
+  assert.equal(spawnedArgs?.[1], path.join(desktopRoot, 'main.mjs'));
 });
 
 test('mcp-lib: ensureDesktopRunning resolves bundled electron relative to desktop package, not cwd', async () => {

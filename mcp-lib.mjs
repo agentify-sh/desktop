@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import { readState, readToken } from './state.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const packageRequire = createRequire(import.meta.url);
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -31,8 +33,11 @@ async function electronLaunch({ platform, allowFallback = false }) {
     };
   }
 
-  const electronCli = path.resolve(__dirname, 'node_modules', 'electron', 'cli.js');
-  if (await fileExists(electronCli)) {
+  let electronCli = null;
+  try {
+    electronCli = packageRequire.resolve('electron/cli.js');
+  } catch {}
+  if (electronCli && await fileExists(electronCli)) {
     return { command: process.execPath, argsPrefix: [electronCli], shell: false };
   }
 
